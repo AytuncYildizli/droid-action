@@ -36,6 +36,7 @@ droid-review:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   variables:
     DROID_STATE_FILE: "$CI_PROJECT_DIR/.droid-state.json"
+    DROID_PROMPT_FILE: "/tmp/droid-prompts/droid-prompt.txt"
     DROID_ACTION_DIR: "/tmp/droid-action"
     DROID_ACTION_REPO: "$[[ inputs.droid_action_repo ]]"
     DROID_ACTION_REF: "$[[ inputs.droid_action_ref ]]"
@@ -50,18 +51,42 @@ droid-review:
     - git clone --depth 1 --branch "$DROID_ACTION_REF" "$DROID_ACTION_REPO" "$DROID_ACTION_DIR"
     - cd "$DROID_ACTION_DIR" && bun install --frozen-lockfile
     - cd "$CI_PROJECT_DIR"
+    - curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://app.factory.ai/cli | sh
+    - export PATH="$HOME/.local/bin:$PATH"
+    - droid --version
   script:
+    - export PATH="$HOME/.local/bin:$PATH"
     - |
       if ! bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-prepare.ts"; then
         export DROID_SUCCESS=false
-        export DROID_ERROR_DETAILS="gitlab-prepare exited non-zero"
+        echo "gitlab-prepare exited non-zero" > /tmp/droid-error.txt
         exit 1
       fi
-    # NOTE: Real `droid exec` invocation lands in a follow-up commit
-    # once the GitLab review prompt + MCP wiring are in place. For now
-    # the prepare/post pair alone exercises the full sticky-note lifecycle.
-    - echo "droid exec placeholder - prompt + MCP wiring lands next."
+    - |
+      # Skip droid exec if prepare decided not to review.
+      if ! grep -q '"shouldRunReview": true' "$DROID_STATE_FILE"; then
+        echo "shouldRunReview=false in state; skipping droid exec."
+        exit 0
+      fi
+    - |
+      droid mcp remove gitlab_mr 2>/dev/null || true
+      droid mcp add gitlab_mr "bun run $DROID_ACTION_DIR/src/mcp/gitlab-mr-server.ts" \
+        --env CI_PROJECT_ID="$CI_PROJECT_ID" \
+        --env CI_API_V4_URL="$CI_API_V4_URL" \
+        --env GITLAB_TOKEN="$GITLAB_TOKEN"
+    - |
+      DROID_ARGS="exec -f $DROID_PROMPT_FILE --output-format stream-json --skip-permissions-unsafe"
+      if [ -n "$REVIEW_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $REVIEW_MODEL"; fi
+      if [ -n "$REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $REASONING_EFFORT"; fi
+      echo "Running: droid $DROID_ARGS"
+      if ! droid $DROID_ARGS; then
+        export DROID_SUCCESS=false
+        echo "droid exec failed" > /tmp/droid-error.txt
+        exit 1
+      fi
   after_script:
+    - export PATH="$HOME/.local/bin:$PATH"
+    - export DROID_ERROR_DETAILS="$(cat /tmp/droid-error.txt 2>/dev/null || true)"
     - bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-update-comment-link.ts" || true
   artifacts:
     when: always

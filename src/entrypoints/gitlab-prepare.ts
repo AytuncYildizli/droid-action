@@ -22,6 +22,7 @@ import {
   buildTrackingNoteBody,
   findExistingTrackingNote,
 } from "../gitlab/operations/tracking-note";
+import { buildGitlabReviewPrompt } from "../gitlab/review-prompt";
 
 type PrepareState = {
   shouldRunReview: boolean;
@@ -33,8 +34,13 @@ type PrepareState = {
   sourceBranchSha: string | null;
   pipelineUrl: string | null;
   jobUrl: string | null;
+  promptPath: string | null;
   reason?: string;
 };
+
+function promptFilePath(): string {
+  return process.env.DROID_PROMPT_FILE || "/tmp/droid-prompts/droid-prompt.txt";
+}
 
 function stateFilePath(): string {
   return (
@@ -63,6 +69,7 @@ async function run(): Promise<void> {
     sourceBranchSha: context.mr?.sourceBranchSha ?? null,
     pipelineUrl: context.pipelineUrl,
     jobUrl: context.jobUrl,
+    promptPath: null,
   };
 
   if (!isMergeRequestContext(context)) {
@@ -124,10 +131,35 @@ async function run(): Promise<void> {
     console.log(`Created tracking note ${trackingNoteId}`);
   }
 
+  console.log("Fetching MR changes to build review prompt...");
+  const changes = await client.getMrChanges(context.project.id, mrIid);
+  const mr = await client.getMr(context.project.id, mrIid);
+
+  const diff = (changes.changes || [])
+    .map((c) => {
+      const header = `diff --git a/${c.old_path} b/${c.new_path}`;
+      return `${header}\n${c.diff}`;
+    })
+    .join("\n");
+
+  const prompt = buildGitlabReviewPrompt({
+    projectPath: context.project.pathWithNamespace,
+    mrIid,
+    mrTitle: mr.title ?? context.mr.title,
+    diff,
+    reviewDepth: context.inputs.reviewDepth,
+  });
+
+  const promptPath = promptFilePath();
+  await fs.mkdir(path.dirname(promptPath), { recursive: true });
+  await fs.writeFile(promptPath, prompt);
+  console.log(`Wrote review prompt (${prompt.length} bytes) to ${promptPath}`);
+
   await writeState({
     ...baseState,
     shouldRunReview: true,
     trackingNoteId,
+    promptPath,
   });
 }
 
