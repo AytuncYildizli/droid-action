@@ -1,16 +1,26 @@
 #!/usr/bin/env bun
 
 /**
- * Prepare step for the GitLab CI/CD Component.
+ * Prepare step for the GitLab CI/CD Component (Pass 1 of the two-pass
+ * review flow).
  *
- * Responsibilities (v1, automatic review on MR pipelines only):
+ * Responsibilities:
  *   1. Parse GitLab CI env into a normalized context.
  *   2. Decide whether this pipeline should run a review (automaticReview
  *      flag + merge_request_event source).
  *   3. Ensure a sticky tracking note exists on the MR; reuse the existing
  *      one if a prior pipeline already created it.
- *   4. Write a small JSON state file so the post-step (and `droid exec`)
- *      can look up the MR IID, note ID, and other context.
+ *   4. Fetch + persist the three review artifacts (mr.diff,
+ *      existing_comments.json, mr_description.txt).
+ *   5. Resolve review depth presets into concrete model+effort.
+ *   6. Generate the Pass-1 (candidate-generation) prompt and write it
+ *      to the shared prompt file.
+ *   7. Write a JSON state file consumed by `gitlab-prepare-validator`
+ *      (Pass 2) and `gitlab-update-comment-link` (post-step).
+ *
+ * Pass 2 is generated later by `gitlab-prepare-validator.ts`, which
+ * reads this state file and overwrites the prompt file with the
+ * Pass-2 content before the second `droid exec` invocation.
  */
 
 import * as fs from "fs/promises";
@@ -22,10 +32,12 @@ import {
   buildTrackingNoteBody,
   findExistingTrackingNote,
 } from "../gitlab/operations/tracking-note";
-import { buildGitlabReviewPrompt } from "../gitlab/review-prompt";
+import { computeReviewArtifacts } from "../gitlab/data/review-artifacts";
+import { generateGitlabReviewCandidatesPrompt } from "../gitlab/prompts/candidates";
+import type { GitlabReviewPromptContext } from "../gitlab/prompts/types";
 import { resolveReviewConfig } from "../utils/review-depth";
 
-type PrepareState = {
+export type PrepareState = {
   shouldRunReview: boolean;
   projectId: string;
   projectPath: string;
@@ -38,11 +50,43 @@ type PrepareState = {
   promptPath: string | null;
   resolvedModel: string | null;
   resolvedReasoningEffort: string | null;
+
+  diffPath: string | null;
+  commentsPath: string | null;
+  descriptionPath: string | null;
+  candidatesPath: string | null;
+  validatedPath: string | null;
+
+  mrTitle: string | null;
+  sourceBranch: string | null;
+  targetBranch: string | null;
+  headSha: string | null;
+  includeSuggestions: boolean;
+  securityReviewEnabled: boolean;
+
   reason?: string;
 };
 
 function promptFilePath(): string {
   return process.env.DROID_PROMPT_FILE || "/tmp/droid-prompts/droid-prompt.txt";
+}
+
+function promptsDir(): string {
+  return path.dirname(promptFilePath());
+}
+
+function candidatesFilePath(): string {
+  return (
+    process.env.REVIEW_CANDIDATES_PATH ||
+    path.join(promptsDir(), "review_candidates.json")
+  );
+}
+
+function validatedFilePath(): string {
+  return (
+    process.env.REVIEW_VALIDATED_PATH ||
+    path.join(promptsDir(), "review_validated.json")
+  );
 }
 
 function resolvedEnvShimPath(): string {
@@ -58,6 +102,7 @@ function shellEscape(value: string): string {
 async function writeResolvedEnvShim(
   model: string | null,
   reasoningEffort: string | null,
+  extras: Record<string, string | null>,
 ): Promise<void> {
   const filePath = resolvedEnvShimPath();
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -66,6 +111,9 @@ async function writeResolvedEnvShim(
     `export RESOLVED_MODEL=${shellEscape(model ?? "")}`,
     `export RESOLVED_REASONING_EFFORT=${shellEscape(reasoningEffort ?? "")}`,
   ];
+  for (const [k, v] of Object.entries(extras)) {
+    lines.push(`export ${k}=${shellEscape(v ?? "")}`);
+  }
   await fs.writeFile(filePath, lines.join("\n") + "\n");
   console.log(`Wrote resolved env shim to ${filePath}`);
 }
@@ -100,6 +148,17 @@ async function run(): Promise<void> {
     promptPath: null,
     resolvedModel: null,
     resolvedReasoningEffort: null,
+    diffPath: null,
+    commentsPath: null,
+    descriptionPath: null,
+    candidatesPath: null,
+    validatedPath: null,
+    mrTitle: context.mr?.title ?? null,
+    sourceBranch: null,
+    targetBranch: null,
+    headSha: null,
+    includeSuggestions: true,
+    securityReviewEnabled: false,
   };
 
   if (!isMergeRequestContext(context)) {
@@ -134,43 +193,44 @@ async function run(): Promise<void> {
 
   const client = new GitlabClient(token, context.apiUrl);
   const mrIid = context.mr.iid;
+  const projectId = context.project.id;
 
-  const existingNotes = await client.listNotes(context.project.id, mrIid);
+  const existingNotes = await client.listNotes(projectId, mrIid);
   const existing = findExistingTrackingNote(existingNotes);
+
+  const includeSuggestions =
+    (process.env.INCLUDE_SUGGESTIONS ?? "true").toLowerCase() !== "false";
+  const securityReviewEnabled = context.inputs.automaticSecurityReview;
 
   const noteBody = buildTrackingNoteBody({
     state: "running",
     pipelineUrl: context.pipelineUrl,
     jobUrl: context.jobUrl,
     triggerUsername: context.user.login,
-    securityReviewRan: context.inputs.automaticSecurityReview,
+    securityReviewRan: securityReviewEnabled,
   });
 
   let trackingNoteId: number;
   if (existing) {
-    await client.updateNote(context.project.id, mrIid, existing.id, noteBody);
+    await client.updateNote(projectId, mrIid, existing.id, noteBody);
     trackingNoteId = existing.id;
     console.log(`Reused existing tracking note ${trackingNoteId}`);
   } else {
-    const created = await client.createNote(
-      context.project.id,
-      mrIid,
-      noteBody,
-    );
+    const created = await client.createNote(projectId, mrIid, noteBody);
     trackingNoteId = created.id;
     console.log(`Created tracking note ${trackingNoteId}`);
   }
 
-  console.log("Fetching MR changes to build review prompt...");
-  const changes = await client.getMrChanges(context.project.id, mrIid);
-  const mr = await client.getMr(context.project.id, mrIid);
-
-  const diff = (changes.changes || [])
-    .map((c) => {
-      const header = `diff --git a/${c.old_path} b/${c.new_path}`;
-      return `${header}\n${c.diff}`;
-    })
-    .join("\n");
+  console.log("Computing review artifacts (diff, notes, description)...");
+  const artifacts = await computeReviewArtifacts({
+    client,
+    projectId,
+    mrIid,
+    outDir: promptsDir(),
+  });
+  console.log(
+    `Artifacts written:\n  ${artifacts.diffPath}\n  ${artifacts.commentsPath}\n  ${artifacts.descriptionPath}`,
+  );
 
   const resolved = resolveReviewConfig({
     reviewModel: context.inputs.reviewModel,
@@ -183,20 +243,39 @@ async function run(): Promise<void> {
       `explicitEffort=${context.inputs.reasoningEffort || "(empty)"} ` +
       `=> model=${resolved.model} effort=${resolved.reasoningEffort ?? "(none)"}`,
   );
-  await writeResolvedEnvShim(resolved.model, resolved.reasoningEffort ?? null);
 
-  const prompt = buildGitlabReviewPrompt({
-    projectPath: context.project.pathWithNamespace,
-    mrIid,
-    mrTitle: mr.title ?? context.mr.title,
-    diff,
-    reviewDepth: context.inputs.reviewDepth,
+  await writeResolvedEnvShim(resolved.model, resolved.reasoningEffort ?? null, {
+    DROID_MR_IID: String(mrIid),
+    DROID_TRACKING_NOTE_ID: String(trackingNoteId),
   });
 
+  const candidatesPath = candidatesFilePath();
+  const validatedPath = validatedFilePath();
+
+  const promptCtx: GitlabReviewPromptContext = {
+    projectPath: context.project.pathWithNamespace,
+    mrIid,
+    mrTitle: artifacts.mr.title ?? context.mr.title ?? "",
+    sourceBranch: artifacts.mr.source_branch ?? "",
+    targetBranch: artifacts.mr.target_branch ?? "",
+    headSha:
+      artifacts.mr.diff_refs?.head_sha ?? context.mr.sourceBranchSha ?? "",
+    diffPath: artifacts.diffPath,
+    commentsPath: artifacts.commentsPath,
+    descriptionPath: artifacts.descriptionPath,
+    candidatesPath,
+    validatedPath,
+    includeSuggestions,
+    securityReviewEnabled,
+  };
+
+  const prompt = generateGitlabReviewCandidatesPrompt(promptCtx);
   const promptPath = promptFilePath();
   await fs.mkdir(path.dirname(promptPath), { recursive: true });
   await fs.writeFile(promptPath, prompt);
-  console.log(`Wrote review prompt (${prompt.length} bytes) to ${promptPath}`);
+  console.log(
+    `Wrote Pass-1 candidates prompt (${prompt.length} bytes) to ${promptPath}`,
+  );
 
   await writeState({
     ...baseState,
@@ -205,6 +284,17 @@ async function run(): Promise<void> {
     promptPath,
     resolvedModel: resolved.model,
     resolvedReasoningEffort: resolved.reasoningEffort ?? null,
+    diffPath: artifacts.diffPath,
+    commentsPath: artifacts.commentsPath,
+    descriptionPath: artifacts.descriptionPath,
+    candidatesPath,
+    validatedPath,
+    mrTitle: promptCtx.mrTitle,
+    sourceBranch: promptCtx.sourceBranch,
+    targetBranch: promptCtx.targetBranch,
+    headSha: promptCtx.headSha,
+    includeSuggestions,
+    securityReviewEnabled,
   });
 }
 

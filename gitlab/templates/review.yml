@@ -69,26 +69,55 @@ droid-review:
         exit 0
       fi
     - |
-      droid mcp remove gitlab_mr 2>/dev/null || true
-      droid mcp add gitlab_mr "bun run $DROID_ACTION_DIR/src/mcp/gitlab-mr-server.ts" \
-        --env CI_PROJECT_ID="$CI_PROJECT_ID" \
-        --env CI_API_V4_URL="$CI_API_V4_URL" \
-        --env GITLAB_TOKEN="$GITLAB_TOKEN"
-    - |
-      # gitlab-prepare resolved depth+overrides into FINAL_MODEL/FINAL_EFFORT
-      # via /tmp/droid-prompts/resolved-env.sh. Source it so the template uses
-      # those resolved values when constructing the droid exec command line.
+      # Source the resolved env shim from gitlab-prepare to expose
+      # RESOLVED_MODEL / RESOLVED_REASONING_EFFORT / DROID_MR_IID /
+      # DROID_TRACKING_NOTE_ID for both droid exec calls and the MCP server.
       if [ -f /tmp/droid-prompts/resolved-env.sh ]; then
         # shellcheck disable=SC1091
         . /tmp/droid-prompts/resolved-env.sh
       fi
-      DROID_ARGS="exec -f $DROID_PROMPT_FILE --output-format stream-json --skip-permissions-unsafe"
+    - |
+      droid mcp remove gitlab_mr 2>/dev/null || true
+      droid mcp add gitlab_mr "bun run $DROID_ACTION_DIR/src/mcp/gitlab-mr-server.ts" \
+        --env CI_PROJECT_ID="$CI_PROJECT_ID" \
+        --env CI_API_V4_URL="$CI_API_V4_URL" \
+        --env GITLAB_TOKEN="$GITLAB_TOKEN" \
+        --env DROID_MR_IID="$DROID_MR_IID" \
+        --env DROID_TRACKING_NOTE_ID="$DROID_TRACKING_NOTE_ID"
+    - |
+      # ---- Pass 1: candidate generation ----
+      # Note: gitlab_mr___submit_review and the MR-mutation tools are
+      # NOT included here. Pass 1 must only WRITE the candidates JSON.
+      PASS1_TOOLS="Read,Grep,Glob,LS,Execute,Edit,Create,ApplyPatch,Task,Skill,FetchUrl"
+      DROID_ARGS="exec -f $DROID_PROMPT_FILE --enabled-tools $PASS1_TOOLS --output-format stream-json --skip-permissions-unsafe --tag code-review"
       if [ -n "$RESOLVED_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $RESOLVED_MODEL"; fi
       if [ -n "$RESOLVED_REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $RESOLVED_REASONING_EFFORT"; fi
-      echo "Running: droid $DROID_ARGS"
+      echo "Running Pass 1 (candidates): droid $DROID_ARGS"
       if ! droid $DROID_ARGS; then
         export DROID_SUCCESS=false
-        echo "droid exec failed" > /tmp/droid-error.txt
+        echo "droid exec pass 1 (candidates) failed" > /tmp/droid-error.txt
+        exit 1
+      fi
+    - |
+      # ---- Prepare Pass 2 prompt ----
+      if ! bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-prepare-validator.ts"; then
+        export DROID_SUCCESS=false
+        echo "gitlab-prepare-validator failed" > /tmp/droid-error.txt
+        exit 1
+      fi
+    - |
+      # ---- Pass 2: validator (posts approved comments) ----
+      # gitlab_mr___submit_review and gitlab_mr___update_tracking_note are
+      # the only MR-mutation tools we expose. The model batches all approved
+      # findings into a single submit_review call.
+      PASS2_TOOLS="Read,Grep,Glob,LS,Execute,Edit,Create,ApplyPatch,Skill,gitlab_mr___submit_review,gitlab_mr___update_tracking_note"
+      DROID_ARGS="exec -f $DROID_PROMPT_FILE --enabled-tools $PASS2_TOOLS --output-format stream-json --skip-permissions-unsafe --tag code-review"
+      if [ -n "$RESOLVED_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $RESOLVED_MODEL"; fi
+      if [ -n "$RESOLVED_REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $RESOLVED_REASONING_EFFORT"; fi
+      echo "Running Pass 2 (validator): droid $DROID_ARGS"
+      if ! droid $DROID_ARGS; then
+        export DROID_SUCCESS=false
+        echo "droid exec pass 2 (validator) failed" > /tmp/droid-error.txt
         exit 1
       fi
   after_script:
@@ -99,4 +128,7 @@ droid-review:
     when: always
     paths:
       - .droid-state.json
+      - /tmp/droid-prompts/review_candidates.json
+      - /tmp/droid-prompts/review_validated.json
+      - /tmp/droid-prompts/droid-prompt.txt
     expire_in: 1 week

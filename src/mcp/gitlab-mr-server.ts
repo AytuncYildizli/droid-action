@@ -185,6 +185,39 @@ export function createGitlabMrServer({
   );
 
   server.tool(
+    "update_tracking_note",
+    "Update the sticky tracking note that gitlab-prepare created at the " +
+      "start of the run. Reads the MR IID and note ID from env so the model " +
+      "doesn't have to thread them through the prompt. Mirrors the GitHub " +
+      "`update_droid_comment` tool.",
+    {
+      body: z
+        .string()
+        .min(1)
+        .describe("New tracking note body in markdown (replaces existing)"),
+    },
+    async ({ body }) => {
+      try {
+        const mrIidEnv =
+          process.env.DROID_MR_IID || process.env.CI_MERGE_REQUEST_IID;
+        const noteIdEnv = process.env.DROID_TRACKING_NOTE_ID;
+        const mrIid = mrIidEnv ? Number(mrIidEnv) : NaN;
+        const noteId = noteIdEnv ? Number(noteIdEnv) : NaN;
+        if (!Number.isFinite(mrIid) || !Number.isFinite(noteId)) {
+          throw new Error(
+            "update_tracking_note requires DROID_MR_IID and " +
+              "DROID_TRACKING_NOTE_ID environment variables",
+          );
+        }
+        await client.updateNote(projectId, mrIid, noteId, body);
+        return textResult(`Updated tracking note ${noteId} on MR !${mrIid}`);
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.tool(
     "update_mr_description",
     "Replace the description/body of a merge request",
     {
