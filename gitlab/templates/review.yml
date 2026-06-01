@@ -1,0 +1,14 @@
+# GitLab CI/CD template for droid-action review.
+# Hello-world placeholder to validate `include: remote:` works across GitHub -> GitLab.
+# Real implementation lands in subsequent commits on feat/gitlab-support.
+
+droid-review:
+  stage: test
+  image: alpine:3.20
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "web"
+  script:
+    - echo "hello from droid-action"
+    - echo "Loaded from Factory-AI/droid-action via include:remote"
