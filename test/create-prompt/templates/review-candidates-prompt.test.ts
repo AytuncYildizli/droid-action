@@ -57,8 +57,8 @@ describe("generateReviewCandidatesPrompt", () => {
 
     const prompt = generateReviewCandidatesPrompt(context);
 
-    expect(prompt).toContain("Invoke the 'review' skill");
-    expect(prompt).toContain("Pass 1: Candidate Generation");
+    expect(prompt).toContain("Invoke the 'deep-review' skill");
+    expect(prompt).toContain("full deep review procedure");
   });
 
   it("includes senior engineer framing", () => {

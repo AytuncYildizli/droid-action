@@ -40,8 +40,8 @@ export function generateReviewCandidatesPrompt(
     : '  - `side`: "RIGHT" for new/modified code (default), "LEFT" only for removed code';
 
   const skillInstruction = includeSuggestions
-    ? "Invoke the 'review' skill to load the review methodology, then execute its **Pass 1: Candidate Generation** procedure — including suggestion block rules."
-    : "Invoke the 'review' skill to load the review methodology, then execute its **Pass 1: Candidate Generation** procedure. Do NOT include code suggestion blocks.";
+    ? "Invoke the 'deep-review' skill to load the review methodology, then execute the full deep review procedure — including suggestion block rules where applicable."
+    : "Invoke the 'deep-review' skill to load the review methodology, then execute the full deep review procedure. Do NOT include code suggestion blocks.";
 
   const securityReviewEnabled = process.env.SECURITY_REVIEW_ENABLED === "true";
 
