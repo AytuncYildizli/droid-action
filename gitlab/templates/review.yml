@@ -1,14 +1,70 @@
-# GitLab CI/CD template for droid-action review.
-# Hello-world placeholder to validate `include: remote:` works across GitHub -> GitLab.
-# Real implementation lands in subsequent commits on feat/gitlab-support.
+spec:
+  inputs:
+    automatic_review:
+      description: "Run code review automatically on every MR event."
+      default: "true"
+    review_depth:
+      description: "Review depth preset: `shallow` (fast) or `deep` (thorough)."
+      default: "deep"
+    review_model:
+      description: "Override the model used for code review. Empty = use depth preset."
+      default: ""
+    reasoning_effort:
+      description: "Override reasoning effort. Empty = use depth preset."
+      default: ""
+    droid_action_repo:
+      description: |
+        Git repo (clone URL) of droid-action. Override if you mirror it
+        privately. Must be reachable from your GitLab runner.
+      default: "https://github.com/Factory-AI/droid-action.git"
+    droid_action_ref:
+      description: |
+        Git ref (tag/branch/sha) of droid-action to clone at runtime.
+        The same ref SHOULD match the `include: remote:` URL above.
+      default: "dev"
+    stage:
+      description: "GitLab CI stage to assign the droid-review job to."
+      default: "test"
+---
+stages:
+  - $[[ inputs.stage ]]
 
 droid-review:
-  stage: test
-  image: alpine:3.20
+  stage: $[[ inputs.stage ]]
+  image: oven/bun:1.2.11
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_PIPELINE_SOURCE == "push"
-    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    DROID_STATE_FILE: "$CI_PROJECT_DIR/.droid-state.json"
+    DROID_ACTION_DIR: "/tmp/droid-action"
+    DROID_ACTION_REPO: "$[[ inputs.droid_action_repo ]]"
+    DROID_ACTION_REF: "$[[ inputs.droid_action_ref ]]"
+    AUTOMATIC_REVIEW: "$[[ inputs.automatic_review ]]"
+    REVIEW_DEPTH: "$[[ inputs.review_depth ]]"
+    REVIEW_MODEL: "$[[ inputs.review_model ]]"
+    REASONING_EFFORT: "$[[ inputs.reasoning_effort ]]"
+    DROID_SUCCESS: "true"
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq --no-install-recommends git ca-certificates curl
+    - git clone --depth 1 --branch "$DROID_ACTION_REF" "$DROID_ACTION_REPO" "$DROID_ACTION_DIR"
+    - cd "$DROID_ACTION_DIR" && bun install --frozen-lockfile
+    - cd "$CI_PROJECT_DIR"
   script:
-    - echo "hello from droid-action"
-    - echo "Loaded from Factory-AI/droid-action via include:remote"
+    - |
+      if ! bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-prepare.ts"; then
+        export DROID_SUCCESS=false
+        export DROID_ERROR_DETAILS="gitlab-prepare exited non-zero"
+        exit 1
+      fi
+    # NOTE: Real `droid exec` invocation lands in a follow-up commit
+    # once the GitLab review prompt + MCP wiring are in place. For now
+    # the prepare/post pair alone exercises the full sticky-note lifecycle.
+    - echo "droid exec placeholder - prompt + MCP wiring lands next."
+  after_script:
+    - bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-update-comment-link.ts" || true
+  artifacts:
+    when: always
+    paths:
+      - .droid-state.json
+    expire_in: 1 week
