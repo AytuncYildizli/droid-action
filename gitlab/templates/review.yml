@@ -12,6 +12,12 @@ spec:
     reasoning_effort:
       description: "Override reasoning effort. Empty = use depth preset."
       default: ""
+    settings:
+      description: |
+        Droid Exec settings as a JSON string or a path to a JSON file.
+        Merged into ~/.factory/droid/settings.json on the runner before
+        `droid exec` runs. Mirrors the GitHub action's `settings` input.
+      default: ""
     droid_action_repo:
       description: |
         Git repo (clone URL) of droid-action. Override if you mirror it
@@ -44,6 +50,7 @@ droid-review:
     REVIEW_DEPTH: "$[[ inputs.review_depth ]]"
     REVIEW_MODEL: "$[[ inputs.review_model ]]"
     REASONING_EFFORT: "$[[ inputs.reasoning_effort ]]"
+    DROID_SETTINGS: "$[[ inputs.settings ]]"
     DROID_SUCCESS: "true"
   before_script:
     - apt-get update -qq

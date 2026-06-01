@@ -44,6 +44,7 @@ export type ParsedGitlabContext = {
     securityNotifyTeam: string;
     securityScanSchedule: boolean;
     securityScanDays: number;
+    settings: string;
   };
 };
 
@@ -135,6 +136,7 @@ export function parseGitlabContext(): ParsedGitlabContext {
         1,
         parseInt(process.env.SECURITY_SCAN_DAYS ?? "7", 10) || 7,
       ),
+      settings: process.env.DROID_SETTINGS ?? "",
     },
   };
 }

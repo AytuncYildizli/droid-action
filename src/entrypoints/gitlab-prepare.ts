@@ -36,6 +36,7 @@ import { computeReviewArtifacts } from "../gitlab/data/review-artifacts";
 import { generateGitlabReviewCandidatesPrompt } from "../gitlab/prompts/candidates";
 import type { GitlabReviewPromptContext } from "../gitlab/prompts/types";
 import { resolveReviewConfig } from "../utils/review-depth";
+import { setupDroidSettings } from "../../base-action/src/setup-droid-settings";
 
 export type PrepareState = {
   shouldRunReview: boolean;
@@ -189,6 +190,19 @@ async function run(): Promise<void> {
       console.error(err.message);
     }
     throw err;
+  }
+
+  // Write ~/.factory/droid/settings.json. Accepts either a raw JSON string
+  // or a path to a JSON file (matching the GitHub action's `settings`
+  // input). Always sets enableAllProjectMcpServers=true so project-scope
+  // MCP servers (if any) are trusted without prompting.
+  try {
+    await setupDroidSettings(context.inputs.settings || undefined);
+  } catch (err) {
+    console.warn(
+      "Failed to setup droid settings; continuing with defaults:",
+      err,
+    );
   }
 
   const client = new GitlabClient(token, context.apiUrl);

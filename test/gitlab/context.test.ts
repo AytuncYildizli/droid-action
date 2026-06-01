@@ -41,6 +41,7 @@ const REQUIRED_CI_ENV = [
   "SECURITY_NOTIFY_TEAM",
   "SECURITY_SCAN_SCHEDULE",
   "SECURITY_SCAN_DAYS",
+  "DROID_SETTINGS",
 ];
 
 function clearEnv() {
@@ -164,5 +165,24 @@ describe("parseGitlabContext", () => {
 
     const ctx = parseGitlabContext();
     expect(ctx.inputs.securityScanDays).toBe(7);
+  });
+
+  it("surfaces DROID_SETTINGS as inputs.settings", () => {
+    process.env.CI_PROJECT_ID = "1";
+    process.env.CI_PROJECT_PATH = "g/r";
+    process.env.CI_COMMIT_SHA = "x";
+    process.env.DROID_SETTINGS = '{"reasoning_effort":"medium"}';
+
+    const ctx = parseGitlabContext();
+    expect(ctx.inputs.settings).toBe('{"reasoning_effort":"medium"}');
+  });
+
+  it("defaults inputs.settings to empty string when unset", () => {
+    process.env.CI_PROJECT_ID = "1";
+    process.env.CI_PROJECT_PATH = "g/r";
+    process.env.CI_COMMIT_SHA = "x";
+
+    const ctx = parseGitlabContext();
+    expect(ctx.inputs.settings).toBe("");
   });
 });
