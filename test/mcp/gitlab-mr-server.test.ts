@@ -84,7 +84,8 @@ describe("createGitlabMrServer", () => {
     const createDisc = client.createDiscussionOnDiff as ReturnType<typeof mock>;
     expect(createDisc.mock.calls.length).toBe(1);
 
-    const [, , , position] = createDisc.mock.calls[0];
+    const call = createDisc.mock.calls[0]!;
+    const position = call[3];
     expect(position).toMatchObject({
       base_sha: "base-sha",
       head_sha: "head-sha",
@@ -115,7 +116,8 @@ describe("createGitlabMrServer", () => {
     });
 
     const createDisc = client.createDiscussionOnDiff as ReturnType<typeof mock>;
-    const [, , , position] = createDisc.mock.calls[0];
+    const call = createDisc.mock.calls[0]!;
+    const position = call[3];
     expect(position.old_line).toBe(5);
     expect(position.new_line).toBeUndefined();
   });
