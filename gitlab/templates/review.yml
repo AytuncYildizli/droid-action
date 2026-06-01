@@ -75,9 +75,16 @@ droid-review:
         --env CI_API_V4_URL="$CI_API_V4_URL" \
         --env GITLAB_TOKEN="$GITLAB_TOKEN"
     - |
+      # gitlab-prepare resolved depth+overrides into FINAL_MODEL/FINAL_EFFORT
+      # via /tmp/droid-prompts/resolved-env.sh. Source it so the template uses
+      # those resolved values when constructing the droid exec command line.
+      if [ -f /tmp/droid-prompts/resolved-env.sh ]; then
+        # shellcheck disable=SC1091
+        . /tmp/droid-prompts/resolved-env.sh
+      fi
       DROID_ARGS="exec -f $DROID_PROMPT_FILE --output-format stream-json --skip-permissions-unsafe"
-      if [ -n "$REVIEW_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $REVIEW_MODEL"; fi
-      if [ -n "$REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $REASONING_EFFORT"; fi
+      if [ -n "$RESOLVED_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $RESOLVED_MODEL"; fi
+      if [ -n "$RESOLVED_REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $RESOLVED_REASONING_EFFORT"; fi
       echo "Running: droid $DROID_ARGS"
       if ! droid $DROID_ARGS; then
         export DROID_SUCCESS=false
