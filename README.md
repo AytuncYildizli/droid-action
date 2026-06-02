@@ -48,7 +48,7 @@ Two files in your project:
 
 ```yaml
 include:
-  - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/gitlab/templates/droid-review.yml"
+  - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/templates/droid-review.yml"
     inputs:
       automatic_review: "true"
       automatic_security_review: "false"

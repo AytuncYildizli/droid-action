@@ -1,3 +1,16 @@
+# GitLab CI/CD Component: droid-review
+#
+# Automated Droid code review on merge requests. Two-pass pipeline
+# (candidate generation + validator), inline MR comments, sticky tracking
+# note with telemetry, optional parallel security-reviewer subagent.
+#
+# Consumed via:
+#   include:
+#     - component: gitlab.com/factory-ai/droid-action/droid-review@<tag>
+#
+# Catalog requires this file to live at `templates/<name>.yml`.
+# See ./README.md for the full directory contract.
+
 spec:
   inputs:
     automatic_review:
