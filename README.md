@@ -58,7 +58,7 @@ droid-review:
     GITLAB_TOKEN: $GITLAB_TOKEN
 ```
 
-Full setup, available inputs, and troubleshooting live in [`docs/gitlab-setup.md`](docs/gitlab-setup.md). Comment-triggered modes (`@droid review` / `@droid fill`) are not yet supported on GitLab — they require platform features GitLab does not expose natively.
+Full setup, available inputs, and troubleshooting live in [`docs/gitlab-setup.md`](docs/gitlab-setup.md).
 
 ### Manual Setup
 
