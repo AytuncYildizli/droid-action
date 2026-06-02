@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
-import { GitlabClient, GitlabApiError } from "../../src/gitlab/api/client";
+import {
+  GitlabClient,
+  GitlabApiError,
+  parseNextLink,
+} from "../../src/gitlab/api/client";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -209,5 +213,73 @@ describe("GitlabClient", () => {
     const mr = await client.getMr(42, 7);
     expect((mr as { iid: number }).iid).toBe(7);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("listNotes paginates via X-Next-Page header", async () => {
+    let calls = 0;
+    const fetchMock = mockFetch((url) => {
+      calls++;
+      const u = new URL(url);
+      expect(u.searchParams.get("per_page")).toBe("100");
+      if (calls === 1) {
+        expect(u.searchParams.get("page")).toBeNull();
+        return new Response(JSON.stringify([{ id: 1 }, { id: 2 }]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Next-Page": "2",
+          },
+        });
+      }
+      if (calls === 2) {
+        expect(u.searchParams.get("page")).toBe("2");
+        return new Response(JSON.stringify([{ id: 3 }]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Next-Page": "",
+          },
+        });
+      }
+      throw new Error("unexpected extra call");
+    });
+    const client = new GitlabClient("glpat-test");
+    const notes = await client.listNotes(42, 7);
+    expect(notes.map((n) => (n as { id: number }).id)).toEqual([1, 2, 3]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("listDiscussions paginates via Link rel=next header when X-Next-Page is absent", async () => {
+    let calls = 0;
+    mockFetch(() => {
+      calls++;
+      if (calls === 1) {
+        return new Response(JSON.stringify([{ id: "a" }]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            Link: '<https://gitlab.com/api/v4/projects/42/merge_requests/7/discussions?page=2&per_page=100>; rel="next"',
+          },
+        });
+      }
+      return new Response(JSON.stringify([{ id: "b" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const client = new GitlabClient("glpat-test");
+    const disc = await client.listDiscussions(42, 7);
+    expect(disc.map((d) => (d as { id: string }).id)).toEqual(["a", "b"]);
+  });
+
+  it("parseNextLink extracts the next URL from a Link header", () => {
+    expect(parseNextLink(null)).toBeNull();
+    expect(parseNextLink("")).toBeNull();
+    expect(
+      parseNextLink(
+        '<https://x/api/page?page=2>; rel="next", <https://x/api/page?page=5>; rel="last"',
+      ),
+    ).toBe("https://x/api/page?page=2");
+    expect(parseNextLink('<https://x/api/page?page=5>; rel="last"')).toBeNull();
   });
 });

@@ -50,6 +50,15 @@ function parseRetryAfter(header: string | null): number | null {
   return null;
 }
 
+export function parseNextLink(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  for (const part of linkHeader.split(",")) {
+    const m = part.match(/<([^>]+)>\s*;\s*rel="next"/);
+    if (m) return m[1] ?? null;
+  }
+  return null;
+}
+
 function computeBackoffMs(
   attempt: number,
   retryAfterMs: number | null,
@@ -78,10 +87,10 @@ export class GitlabClient {
     this.retry = { ...DEFAULT_RETRY, ...retry };
   }
 
-  private async request<T>(
+  private async requestRaw(
     path: string,
     init: RequestInitWithJson = {},
-  ): Promise<T> {
+  ): Promise<Response> {
     const { json, headers: rawHeaders, ...rest } = init;
     const headers: Record<string, string> = {
       "PRIVATE-TOKEN": this.token,
@@ -98,7 +107,6 @@ export class GitlabClient {
     const url = path.startsWith("http") ? path : `${this.baseUrl}${path}`;
 
     let attempt = 0;
-    // attempt 0 = initial request, then up to maxRetries follow-up tries.
     while (true) {
       let response: Response;
       try {
@@ -110,12 +118,7 @@ export class GitlabClient {
         continue;
       }
 
-      if (response.ok) {
-        if (response.status === 204) {
-          return undefined as unknown as T;
-        }
-        return (await response.json()) as T;
-      }
+      if (response.ok) return response;
 
       const shouldRetry =
         RETRYABLE_STATUS.has(response.status) &&
@@ -145,6 +148,53 @@ export class GitlabClient {
     }
   }
 
+  private async request<T>(
+    path: string,
+    init: RequestInitWithJson = {},
+  ): Promise<T> {
+    const response = await this.requestRaw(path, init);
+    if (response.status === 204) {
+      return undefined as unknown as T;
+    }
+    return (await response.json()) as T;
+  }
+
+  private appendQuery(url: string, key: string, value: string): string {
+    const u = new URL(url);
+    u.searchParams.set(key, value);
+    return u.toString();
+  }
+
+  private async paginate<T>(
+    path: string,
+    init: RequestInitWithJson = {},
+  ): Promise<T[]> {
+    const absolute = path.startsWith("http") ? path : `${this.baseUrl}${path}`;
+    const firstUrl = this.appendQuery(absolute, "per_page", "100");
+
+    const out: T[] = [];
+    let nextUrl: string | null = firstUrl;
+
+    while (nextUrl !== null) {
+      const response = await this.requestRaw(nextUrl, init);
+      const chunk = (await response.json()) as T[];
+      if (Array.isArray(chunk)) out.push(...chunk);
+
+      // Prefer X-Next-Page (older GitLab) then Link header (rel=next).
+      const xNextPage = response.headers.get("X-Next-Page");
+      const linkNext = parseNextLink(response.headers.get("Link"));
+
+      if (xNextPage && xNextPage.trim().length > 0) {
+        nextUrl = this.appendQuery(firstUrl, "page", xNextPage.trim());
+      } else if (linkNext) {
+        nextUrl = linkNext;
+      } else {
+        nextUrl = null;
+      }
+    }
+    return out;
+  }
+
   private projectPath(projectId: string | number): string {
     return `/projects/${encodeURIComponent(String(projectId))}`;
   }
@@ -165,8 +215,17 @@ export class GitlabClient {
   }
 
   listNotes(projectId: string | number, mrIid: number): Promise<GitlabNote[]> {
-    return this.request<GitlabNote[]>(
-      `${this.projectPath(projectId)}/merge_requests/${mrIid}/notes?per_page=100`,
+    return this.paginate<GitlabNote>(
+      `${this.projectPath(projectId)}/merge_requests/${mrIid}/notes`,
+    );
+  }
+
+  listDiscussions(
+    projectId: string | number,
+    mrIid: number,
+  ): Promise<GitlabDiscussion[]> {
+    return this.paginate<GitlabDiscussion>(
+      `${this.projectPath(projectId)}/merge_requests/${mrIid}/discussions`,
     );
   }
 
