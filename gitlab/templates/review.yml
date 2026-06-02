@@ -12,6 +12,12 @@ spec:
     reasoning_effort:
       description: "Override reasoning effort. Empty = use depth preset."
       default: ""
+    include_suggestions:
+      description: |
+        Include code suggestion blocks in review comments when the fix is
+        high-confidence. Set to "false" to disable suggestion blocks
+        entirely. Mirrors the GitHub action's `include_suggestions` input.
+      default: "true"
     settings:
       description: |
         Droid Exec settings as a JSON string or a path to a JSON file.
@@ -56,6 +62,7 @@ droid-review:
     REVIEW_DEPTH: "$[[ inputs.review_depth ]]"
     REVIEW_MODEL: "$[[ inputs.review_model ]]"
     REASONING_EFFORT: "$[[ inputs.reasoning_effort ]]"
+    INCLUDE_SUGGESTIONS: "$[[ inputs.include_suggestions ]]"
     DROID_SETTINGS: "$[[ inputs.settings ]]"
     DROID_SUCCESS: "true"
   before_script:
