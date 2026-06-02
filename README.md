@@ -38,6 +38,28 @@ The guided flow will:
 
 For GitHub-only setups you can also run `/install-github-app`. See the [Automated Code Review guide](https://docs.factory.ai/guides/droid-exec/code-review) and the [GitHub App installation guide](https://docs.factory.ai/cli/features/install-github-app) for full details.
 
+### GitLab
+
+GitLab support ships as a **GitLab CI/CD Component** under `gitlab/templates/review.yml`. It delivers the same automatic two-pass code review and parallel security-reviewer subagent, with inline MR comments, a sticky tracking note, and `.droid-debug/` artifacts.
+
+Minimal `.gitlab-ci.yml`:
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/gitlab/templates/review.yml"
+    inputs:
+      automatic_review: "true"
+      automatic_security_review: "false"
+      review_depth: "deep"
+
+droid-review:
+  variables:
+    FACTORY_API_KEY: $FACTORY_API_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN
+```
+
+Full setup, available inputs, and troubleshooting live in [`docs/gitlab-setup.md`](docs/gitlab-setup.md). Comment-triggered modes (`@droid review` / `@droid fill`) are not yet supported on GitLab — they require platform features GitLab does not expose natively.
+
 ### Manual Setup
 
 If you prefer to wire things up by hand:
