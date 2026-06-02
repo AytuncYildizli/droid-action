@@ -6,7 +6,13 @@
 #
 # Consumed via:
 #   include:
-#     - component: gitlab.com/factory-ai/droid-action/droid-review@<tag>
+#     - project: "factory-components/droid-action"
+#       ref: main
+#       file: "/templates/droid-review.yml"
+#
+# Or, once Catalog-published:
+#   include:
+#     - component: gitlab.com/factory-components/droid-action/droid-review@<tag>
 #
 # Catalog requires this file to live at `templates/<name>.yml`.
 # See ./README.md for the full directory contract.
@@ -60,9 +66,11 @@ spec:
       default: ""
     droid_action_repo:
       description: |
-        Git repo (clone URL) of droid-action. Override if you mirror it
-        privately. Must be reachable from your GitLab runner.
-      default: "https://github.com/Factory-AI/droid-action.git"
+        Git repo (clone URL) of droid-action. Defaults to the gitlab.com
+        mirror so GitLab runners with restricted egress only need
+        gitlab.com + app.factory.ai access. Override if you mirror it
+        privately.
+      default: "https://gitlab.com/factory-components/droid-action.git"
     droid_action_ref:
       description: |
         Git ref (tag/branch/sha) of droid-action to clone at runtime.

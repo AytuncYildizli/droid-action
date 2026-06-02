@@ -14,7 +14,9 @@
 #     comments. The token owner IS the poster.
 
 include:
-  - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/templates/droid-review.yml"
+  - project: "factory-components/droid-action"
+    ref: main
+    file: "/templates/droid-review.yml"
     inputs:
       automatic_review: "true" # run on every MR event; "false" disables
       review_depth: "deep" # "deep" (thorough) or "shallow" (fast)

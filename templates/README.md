@@ -14,14 +14,23 @@ GitHub action code lives at `action.yml` (root) and `.github/workflows/`.
 
 ## Consuming a component
 
-Once the Catalog publishes (`gitlab.com/factory-ai/droid-action`):
+This repo is mirrored to [`gitlab.com/factory-components/droid-action`](https://gitlab.com/factory-components/droid-action). Customers include the template from the mirror:
 
 ```yaml
 include:
-  - component: gitlab.com/factory-ai/droid-action/droid-review@v1
+  - project: "factory-components/droid-action"
+    ref: main
+    file: "/templates/droid-review.yml"
 ```
 
-Until then, consume via the raw GitHub URL:
+Once the project is marked as a [CI/CD Catalog](https://docs.gitlab.com/ee/ci/components/) project and the first tagged release is published, the shorter `component:` form also becomes available:
+
+```yaml
+include:
+  - component: gitlab.com/factory-components/droid-action/droid-review@v1
+```
+
+Fallback for projects that can't reach gitlab.com (use the raw GitHub URL):
 
 ```yaml
 include:
