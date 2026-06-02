@@ -40,7 +40,7 @@ For GitHub-only setups you can also run `/install-github-app`. See the [Automate
 
 ### GitLab
 
-GitLab support ships as a **GitLab CI/CD Component** under `gitlab/templates/review.yml`. It delivers the same automatic two-pass code review and parallel security-reviewer subagent, with inline MR comments, a sticky tracking note, and `.droid-debug/` artifacts.
+GitLab support ships as a **GitLab CI/CD Component** that delivers automated code review — inline MR comments on every merge request, with optional security review.
 
 Minimal `.gitlab-ci.yml`:
 
