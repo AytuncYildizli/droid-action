@@ -39,6 +39,12 @@ droid-review:
   stage: $[[ inputs.stage ]]
   image: oven/bun:1.2.11
   rules:
+    # Skip draft / WIP MRs (parity with GitHub's `if: ... draft == false`
+    # pattern). The legacy "WIP:" prefix is also covered.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /^Draft:/'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /^WIP:/'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   variables:
     DROID_STATE_FILE: "$CI_PROJECT_DIR/.droid-state.json"
@@ -61,6 +67,15 @@ droid-review:
     - curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://app.factory.ai/cli | sh
     - export PATH="$HOME/.local/bin:$PATH"
     - droid --version
+    # Copy bundled custom droids (e.g. security-reviewer) into the runner's
+    # ~/.factory/droids so the Skill / Task subagents can find them. Mirrors
+    # the GitHub action's "Setup Custom Droids" step.
+    - mkdir -p ~/.factory/droids
+    - |
+      if [ -d "$DROID_ACTION_DIR/.factory/droids" ]; then
+        cp -r "$DROID_ACTION_DIR/.factory/droids/." ~/.factory/droids/
+        echo "Copied custom droids from $DROID_ACTION_DIR/.factory/droids to ~/.factory/droids"
+      fi
   script:
     - export PATH="$HOME/.local/bin:$PATH"
     - |
@@ -95,14 +110,21 @@ droid-review:
       # ---- Pass 1: candidate generation ----
       # Note: gitlab_mr___submit_review and the MR-mutation tools are
       # NOT included here. Pass 1 must only WRITE the candidates JSON.
+      set -o pipefail
       PASS1_TOOLS="Read,Grep,Glob,LS,Execute,Edit,Create,ApplyPatch,Task,Skill,FetchUrl"
+      PASS1_LOG="/tmp/droid-prompts/pass1-output.jsonl"
       DROID_ARGS="exec -f $DROID_PROMPT_FILE --enabled-tools $PASS1_TOOLS --output-format stream-json --skip-permissions-unsafe --tag code-review"
       if [ -n "$RESOLVED_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $RESOLVED_MODEL"; fi
       if [ -n "$RESOLVED_REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $RESOLVED_REASONING_EFFORT"; fi
       echo "Running Pass 1 (candidates): droid $DROID_ARGS"
-      if ! droid $DROID_ARGS; then
+      if ! droid $DROID_ARGS 2>&1 | tee "$PASS1_LOG"; then
         export DROID_SUCCESS=false
-        echo "droid exec pass 1 (candidates) failed" > /tmp/droid-error.txt
+        {
+          echo "droid exec pass 1 (candidates) failed"
+          echo ""
+          echo "--- last 60 lines of pass 1 output ---"
+          tail -n 60 "$PASS1_LOG" 2>/dev/null || true
+        } > /tmp/droid-error.txt
         exit 1
       fi
     - |
@@ -117,25 +139,37 @@ droid-review:
       # gitlab_mr___submit_review and gitlab_mr___update_tracking_note are
       # the only MR-mutation tools we expose. The model batches all approved
       # findings into a single submit_review call.
+      set -o pipefail
       PASS2_TOOLS="Read,Grep,Glob,LS,Execute,Edit,Create,ApplyPatch,Skill,gitlab_mr___submit_review,gitlab_mr___update_tracking_note"
+      PASS2_LOG="/tmp/droid-prompts/pass2-output.jsonl"
       DROID_ARGS="exec -f $DROID_PROMPT_FILE --enabled-tools $PASS2_TOOLS --output-format stream-json --skip-permissions-unsafe --tag code-review"
       if [ -n "$RESOLVED_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $RESOLVED_MODEL"; fi
       if [ -n "$RESOLVED_REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $RESOLVED_REASONING_EFFORT"; fi
       echo "Running Pass 2 (validator): droid $DROID_ARGS"
-      if ! droid $DROID_ARGS; then
+      if ! droid $DROID_ARGS 2>&1 | tee "$PASS2_LOG"; then
         export DROID_SUCCESS=false
-        echo "droid exec pass 2 (validator) failed" > /tmp/droid-error.txt
+        {
+          echo "droid exec pass 2 (validator) failed"
+          echo ""
+          echo "--- last 60 lines of pass 2 output ---"
+          tail -n 60 "$PASS2_LOG" 2>/dev/null || true
+        } > /tmp/droid-error.txt
         exit 1
       fi
   after_script:
     - export PATH="$HOME/.local/bin:$PATH"
     - export DROID_ERROR_DETAILS="$(cat /tmp/droid-error.txt 2>/dev/null || true)"
+    - export DROID_PASS1_LOG="/tmp/droid-prompts/pass1-output.jsonl"
+    - export DROID_PASS2_LOG="/tmp/droid-prompts/pass2-output.jsonl"
+    # Stage debug artifacts that live outside CI_PROJECT_DIR so GitLab can
+    # capture them. Failure here must not break the after_script chain.
+    - mkdir -p "$CI_PROJECT_DIR/.droid-debug/prompts" || true
+    - cp -r /tmp/droid-prompts/. "$CI_PROJECT_DIR/.droid-debug/prompts/" 2>/dev/null || true
+    - cp /tmp/droid-error.txt "$CI_PROJECT_DIR/.droid-debug/" 2>/dev/null || true
     - bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-update-comment-link.ts" || true
   artifacts:
     when: always
     paths:
       - .droid-state.json
-      - /tmp/droid-prompts/review_candidates.json
-      - /tmp/droid-prompts/review_validated.json
-      - /tmp/droid-prompts/droid-prompt.txt
+      - .droid-debug/
     expire_in: 1 week

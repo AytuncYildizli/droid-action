@@ -19,6 +19,7 @@ import * as path from "path";
 import { setupGitlabToken } from "../gitlab/token";
 import { GitlabClient } from "../gitlab/api/client";
 import { buildTrackingNoteBody } from "../gitlab/operations/tracking-note";
+import { collectExecTelemetry } from "../gitlab/data/exec-telemetry";
 
 type PrepareState = {
   shouldRunReview: boolean;
@@ -81,6 +82,13 @@ async function run(): Promise<void> {
   const pipelineUrl = process.env.CI_PIPELINE_URL || state.pipelineUrl;
   const jobUrl = process.env.CI_JOB_URL || state.jobUrl;
 
+  const telemetry = await collectExecTelemetry({
+    pass1LogPath:
+      process.env.DROID_PASS1_LOG || "/tmp/droid-prompts/pass1-output.jsonl",
+    pass2LogPath:
+      process.env.DROID_PASS2_LOG || "/tmp/droid-prompts/pass2-output.jsonl",
+  });
+
   const body = buildTrackingNoteBody({
     state: droidSuccess ? "success" : "failure",
     pipelineUrl,
@@ -88,6 +96,13 @@ async function run(): Promise<void> {
     triggerUsername,
     errorDetails,
     securityReviewRan,
+    telemetry: {
+      totalNumTurns: telemetry.totalNumTurns,
+      totalDurationMs: telemetry.totalDurationMs,
+      totalCostUsd: telemetry.totalCostUsd,
+      pass1SessionId: telemetry.pass1?.sessionId ?? null,
+      pass2SessionId: telemetry.pass2?.sessionId ?? null,
+    },
   });
 
   await client.updateNote(
