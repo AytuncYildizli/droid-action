@@ -45,12 +45,6 @@ droid-review:
   stage: $[[ inputs.stage ]]
   image: oven/bun:1.2.11
   rules:
-    # Skip draft / WIP MRs (parity with GitHub's `if: ... draft == false`
-    # pattern). The legacy "WIP:" prefix is also covered.
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /^Draft:/'
-      when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /^WIP:/'
-      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   variables:
     DROID_STATE_FILE: "$CI_PROJECT_DIR/.droid-state.json"
@@ -126,12 +120,7 @@ droid-review:
       echo "Running Pass 1 (candidates): droid $DROID_ARGS"
       if ! droid $DROID_ARGS 2>&1 | tee "$PASS1_LOG"; then
         export DROID_SUCCESS=false
-        {
-          echo "droid exec pass 1 (candidates) failed"
-          echo ""
-          echo "--- last 60 lines of pass 1 output ---"
-          tail -n 60 "$PASS1_LOG" 2>/dev/null || true
-        } > /tmp/droid-error.txt
+        echo "droid exec pass 1 (candidates) failed" > /tmp/droid-error.txt
         exit 1
       fi
     - |
@@ -155,12 +144,7 @@ droid-review:
       echo "Running Pass 2 (validator): droid $DROID_ARGS"
       if ! droid $DROID_ARGS 2>&1 | tee "$PASS2_LOG"; then
         export DROID_SUCCESS=false
-        {
-          echo "droid exec pass 2 (validator) failed"
-          echo ""
-          echo "--- last 60 lines of pass 2 output ---"
-          tail -n 60 "$PASS2_LOG" 2>/dev/null || true
-        } > /tmp/droid-error.txt
+        echo "droid exec pass 2 (validator) failed" > /tmp/droid-error.txt
         exit 1
       fi
   after_script:
