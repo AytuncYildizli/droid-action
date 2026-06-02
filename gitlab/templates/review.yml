@@ -18,6 +18,15 @@ spec:
         high-confidence. Set to "false" to disable suggestion blocks
         entirely. Mirrors the GitHub action's `include_suggestions` input.
       default: "true"
+    automatic_security_review:
+      description: |
+        Automatically run a security-focused review subagent in parallel
+        with the regular code review on every MR pipeline. Findings are
+        prefixed with `[security]` and posted alongside code-review
+        comments. Mirrors the GitHub action's `automatic_security_review`
+        input. The security-review skill is built into the Droid CLI; no
+        plugin install is required.
+      default: "false"
     settings:
       description: |
         Droid Exec settings as a JSON string or a path to a JSON file.
@@ -57,6 +66,7 @@ droid-review:
     REVIEW_MODEL: "$[[ inputs.review_model ]]"
     REASONING_EFFORT: "$[[ inputs.reasoning_effort ]]"
     INCLUDE_SUGGESTIONS: "$[[ inputs.include_suggestions ]]"
+    AUTOMATIC_SECURITY_REVIEW: "$[[ inputs.automatic_security_review ]]"
     DROID_SETTINGS: "$[[ inputs.settings ]]"
     DROID_SUCCESS: "true"
   before_script:
