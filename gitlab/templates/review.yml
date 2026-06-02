@@ -65,6 +65,19 @@ droid-review:
     INCLUDE_SUGGESTIONS: "$[[ inputs.include_suggestions ]]"
     DROID_SETTINGS: "$[[ inputs.settings ]]"
     DROID_SUCCESS: "true"
+    # Pin bun's install cache to a stable path inside CI_PROJECT_DIR so
+    # GitLab's `cache:` rules can persist it across pipelines. Mirrors
+    # actions/cache usage in the GitHub action.
+    BUN_INSTALL_CACHE_DIR: "$CI_PROJECT_DIR/.bun-cache"
+  # Cache the cloned droid-action checkout and bun's package cache to
+  # avoid re-cloning + re-downloading dependencies on every MR pipeline.
+  # The `key:` is pinned to the droid_action_ref so a ref change cleanly
+  # invalidates without manual purging.
+  cache:
+    key: "droid-action-$[[ inputs.droid_action_ref ]]"
+    paths:
+      - .bun-cache/
+    policy: pull-push
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq --no-install-recommends git ca-certificates curl
