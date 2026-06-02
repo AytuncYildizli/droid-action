@@ -27,6 +27,18 @@ spec:
         input. The security-review skill is built into the Droid CLI; no
         plugin install is required.
       default: "false"
+    security_block_on_critical:
+      description: |
+        When the security reviewer reports CRITICAL findings, block merge
+        of the MR. Mirrors the GitHub action's `security_block_on_critical`
+        input. Defaults to `"true"`.
+      default: "true"
+    security_block_on_high:
+      description: |
+        When the security reviewer reports HIGH findings, block merge of
+        the MR. Mirrors the GitHub action's `security_block_on_high` input.
+        Defaults to `"false"`.
+      default: "false"
     settings:
       description: |
         Droid Exec settings as a JSON string or a path to a JSON file.
@@ -67,6 +79,8 @@ droid-review:
     REASONING_EFFORT: "$[[ inputs.reasoning_effort ]]"
     INCLUDE_SUGGESTIONS: "$[[ inputs.include_suggestions ]]"
     AUTOMATIC_SECURITY_REVIEW: "$[[ inputs.automatic_security_review ]]"
+    SECURITY_BLOCK_ON_CRITICAL: "$[[ inputs.security_block_on_critical ]]"
+    SECURITY_BLOCK_ON_HIGH: "$[[ inputs.security_block_on_high ]]"
     DROID_SETTINGS: "$[[ inputs.settings ]]"
     DROID_SUCCESS: "true"
   before_script:
