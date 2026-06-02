@@ -106,4 +106,108 @@ describe("GitlabClient", () => {
       expect((e.body as { message: string }).message).toBe("404 Not Found");
     }
   });
+
+  it("does not retry on non-retryable 4xx (404, 401, 403)", async () => {
+    const fetchMock = mockFetch(
+      () =>
+        new Response("nope", {
+          status: 404,
+          statusText: "Not Found",
+        }),
+    );
+    const client = new GitlabClient("glpat-test", undefined, {
+      maxRetries: 5,
+      baseDelayMs: 1,
+      maxDelayMs: 10,
+    });
+    try {
+      await client.getMr(42, 999);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GitlabApiError);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries on 429 with exponential backoff and eventually succeeds", async () => {
+    let calls = 0;
+    const fetchMock = mockFetch(() => {
+      calls++;
+      if (calls < 3) {
+        return new Response("rate limited", {
+          status: 429,
+          statusText: "Too Many Requests",
+        });
+      }
+      return jsonResponse({ iid: 7 });
+    });
+    const client = new GitlabClient("glpat-test", undefined, {
+      maxRetries: 5,
+      baseDelayMs: 1,
+      maxDelayMs: 10,
+    });
+    const mr = await client.getMr(42, 7);
+    expect((mr as { iid: number }).iid).toBe(7);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries on 500/502/503/504 and surfaces the final error after maxRetries", async () => {
+    const fetchMock = mockFetch(
+      () => new Response("upstream down", { status: 503 }),
+    );
+    const client = new GitlabClient("glpat-test", undefined, {
+      maxRetries: 2,
+      baseDelayMs: 1,
+      maxDelayMs: 5,
+    });
+    try {
+      await client.getMr(42, 7);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GitlabApiError);
+      expect((err as GitlabApiError).status).toBe(503);
+    }
+    // 1 initial + 2 retries = 3 attempts
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("honors Retry-After header (seconds) on 429", async () => {
+    let calls = 0;
+    const times: number[] = [];
+    const fetchMock = mockFetch(() => {
+      times.push(Date.now());
+      calls++;
+      if (calls < 2) {
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "Retry-After": "0" },
+        });
+      }
+      return jsonResponse({ iid: 7 });
+    });
+    const client = new GitlabClient("glpat-test", undefined, {
+      maxRetries: 3,
+      baseDelayMs: 1,
+      maxDelayMs: 10,
+    });
+    await client.getMr(42, 7);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries on fetch network errors", async () => {
+    let calls = 0;
+    const fetchMock = mockFetch(() => {
+      calls++;
+      if (calls < 2) throw new Error("ECONNRESET");
+      return jsonResponse({ iid: 7 });
+    });
+    const client = new GitlabClient("glpat-test", undefined, {
+      maxRetries: 3,
+      baseDelayMs: 1,
+      maxDelayMs: 5,
+    });
+    const mr = await client.getMr(42, 7);
+    expect((mr as { iid: number }).iid).toBe(7);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

@@ -21,13 +21,61 @@ export class GitlabApiError extends Error {
 
 type RequestInitWithJson = Omit<RequestInit, "body"> & { json?: unknown };
 
+export type RetryOptions = {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+};
+
+const DEFAULT_RETRY: RetryOptions = {
+  maxRetries: 5,
+  baseDelayMs: 500,
+  maxDelayMs: 30_000,
+};
+
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null;
+  const asInt = Number.parseInt(header, 10);
+  if (Number.isFinite(asInt) && asInt >= 0) return asInt * 1000;
+  const asDate = Date.parse(header);
+  if (Number.isFinite(asDate)) {
+    return Math.max(0, asDate - Date.now());
+  }
+  return null;
+}
+
+function computeBackoffMs(
+  attempt: number,
+  retryAfterMs: number | null,
+  opts: RetryOptions,
+): number {
+  if (retryAfterMs !== null) {
+    return Math.min(opts.maxDelayMs, retryAfterMs);
+  }
+  const exp = opts.baseDelayMs * Math.pow(2, attempt);
+  const jitter = Math.random() * opts.baseDelayMs;
+  return Math.min(opts.maxDelayMs, exp + jitter);
+}
+
 export class GitlabClient {
   private readonly baseUrl: string;
   private readonly token: string;
+  private readonly retry: RetryOptions;
 
-  constructor(token: string, baseUrl: string = GITLAB_API_URL) {
+  constructor(
+    token: string,
+    baseUrl: string = GITLAB_API_URL,
+    retry: Partial<RetryOptions> = {},
+  ) {
     this.token = token;
     this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.retry = { ...DEFAULT_RETRY, ...retry };
   }
 
   private async request<T>(
@@ -48,13 +96,40 @@ export class GitlabClient {
     }
 
     const url = path.startsWith("http") ? path : `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      ...rest,
-      headers,
-      body,
-    });
 
-    if (!response.ok) {
+    let attempt = 0;
+    // attempt 0 = initial request, then up to maxRetries follow-up tries.
+    while (true) {
+      let response: Response;
+      try {
+        response = await fetch(url, { ...rest, headers, body });
+      } catch (err) {
+        if (attempt >= this.retry.maxRetries) throw err;
+        await sleep(computeBackoffMs(attempt, null, this.retry));
+        attempt++;
+        continue;
+      }
+
+      if (response.ok) {
+        if (response.status === 204) {
+          return undefined as unknown as T;
+        }
+        return (await response.json()) as T;
+      }
+
+      const shouldRetry =
+        RETRYABLE_STATUS.has(response.status) &&
+        attempt < this.retry.maxRetries;
+      if (shouldRetry) {
+        const retryAfterMs = parseRetryAfter(
+          response.headers.get("Retry-After"),
+        );
+        const delay = computeBackoffMs(attempt, retryAfterMs, this.retry);
+        await sleep(delay);
+        attempt++;
+        continue;
+      }
+
       let parsed: unknown = null;
       const text = await response.text();
       try {
@@ -68,12 +143,6 @@ export class GitlabClient {
         parsed,
       );
     }
-
-    if (response.status === 204) {
-      return undefined as unknown as T;
-    }
-
-    return (await response.json()) as T;
   }
 
   private projectPath(projectId: string | number): string {
