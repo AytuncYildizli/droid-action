@@ -1,0 +1,70 @@
+# Example .gitlab-ci.yml showcasing the droid-action GitLab CI/CD Component.
+#
+# Drop this file (or its snippets) at the root of your GitLab project.
+# It defines a single `droid-review` job that runs Factory Droid's
+# automated code review on every merge_request_event.
+#
+# Prerequisites (one-time, configured via the GitLab UI or `glab`):
+#
+#   * FACTORY_API_KEY — masked CI/CD variable. Get one at
+#     https://app.factory.ai/settings/api-keys
+#
+#   * GITLAB_TOKEN    — masked CI/CD variable. A personal access token
+#     with `api` scope, minted by the GitLab user/account you want
+#     review comments to be posted from. The poster identity IS the
+#     owner of this token; there is no API impersonation. To switch
+#     posters later, replace the variable's value.
+#
+# Both variables can be set at the project, subgroup, or top-level
+# group level, depending on how widely you want the review to roll out.
+
+include:
+  # Pin to a release tag once droid-action publishes one. Until then,
+  # `main` tracks the latest stable cut. `droid_action_ref` below MUST
+  # match the ref in this URL so the template and the runtime source
+  # stay consistent.
+  - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/gitlab/templates/review.yml"
+    inputs:
+      # ---- core review behavior ----
+      automatic_review: "true" # run on every MR event; "false" disables
+      review_depth: "deep" # "deep" (gpt-5.2 / high) or "shallow" (kimi-k2.6 / none)
+      include_suggestions: "true" # post code-suggestion blocks for high-confidence fixes
+
+      # ---- security review (parallel security-reviewer subagent) ----
+      automatic_security_review: "false" # enable to flag vulns alongside the regular review
+      security_block_on_critical: "true" # block merge on CRITICAL findings (when security review is on)
+      security_block_on_high: "false" # block merge on HIGH findings (defaults to false)
+
+      # ---- runtime source pin ----
+      droid_action_ref: "main"
+
+droid-review:
+  variables:
+    FACTORY_API_KEY: $FACTORY_API_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN
+# ---- Optional: add @droid fill mode -------------------------------------
+#
+# Uncomment the include below to also auto-fill new MRs' descriptions
+# from their diffs. The fill job fires on the same `merge_request_event`
+# trigger as the review job; together they form Factory Droid's GA GitLab
+# experience.
+#
+# include:
+#   - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/gitlab/templates/fill.yml"
+#     inputs:
+#       automatic_fill: "false"   # true = fill every new MR automatically
+#       droid_action_ref: "main"
+#
+# droid-fill:
+#   variables:
+#     FACTORY_API_KEY: $FACTORY_API_KEY
+#     GITLAB_TOKEN: $GITLAB_TOKEN
+#
+# With automatic_fill="false", trigger fill manually per MR by either:
+#   - writing "@droid fill" in the MR description, OR
+#   - writing "@droid fill" in the MR title, OR
+#   - adding the "droid:fill" label to the MR.
+#
+# After Droid fills the description, it strips the @droid fill token so
+# the next merge_request_event doesn't re-trigger.
+# -----------------------------------------------------------------------

@@ -15,23 +15,29 @@ droid
 > /install-code-review
 ```
 
-It detects GitLab, optionally provisions a branded `Factory Droid` service
-account, asks the configuration questions below, generates the
-`.gitlab-ci.yml`, and opens an MR / direct-commits to the target project(s).
+It detects GitLab, asks which account should be the poster of review
+comments (you supply its PAT as `GITLAB_TOKEN`), asks the configuration
+questions below, generates the `.gitlab-ci.yml`, and opens an MR /
+direct-commits to the target project(s).
 
 ## Manual installation
 
 ### 1. Prerequisites
 
-| Requirement                           | How to get it                                                                                                                                                     |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitLab Maintainer role on the project | Repo admin grants you Maintainer (40)                                                                                                                             |
-| `FACTORY_API_KEY` CI/CD variable      | Generate at <https://app.factory.ai/settings/api-keys>; add as **masked**, **unprotected** variable at the project, subgroup, or top-level group level            |
-| `GITLAB_TOKEN` CI/CD variable         | A personal or service-account access token with the `api` scope. Required so the MCP server can post comments back to the MR. Add as **masked**, **unprotected**. |
+| Requirement                           | How to get it                                                                                                                                                                                            |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitLab Maintainer role on the project | Repo admin grants you Maintainer (40)                                                                                                                                                                    |
+| `FACTORY_API_KEY` CI/CD variable      | Generate at <https://app.factory.ai/settings/api-keys>; add as **masked**, **unprotected** variable at the project, subgroup, or top-level group level                                                   |
+| `GITLAB_TOKEN` CI/CD variable         | A personal access token with the `api` scope, owned by whichever account should post review comments. The token owner is the poster — there is no API impersonation. Add as **masked**, **unprotected**. |
 
 ### 2. Add the CI/CD Component
 
-Create or extend `.gitlab-ci.yml` in your project with:
+Drop-in samples live in [`gitlab/examples/`](../gitlab/examples/):
+
+- [`.gitlab-ci.minimal.yml`](../gitlab/examples/.gitlab-ci.minimal.yml) — shortest possible, accepts every default.
+- [`.gitlab-ci.example.yml`](../gitlab/examples/.gitlab-ci.example.yml) — annotated with every input.
+
+The minimal form looks like this; create or extend `.gitlab-ci.yml` in your project with:
 
 ```yaml
 include:

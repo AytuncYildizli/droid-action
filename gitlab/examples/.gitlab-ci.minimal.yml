@@ -1,0 +1,12 @@
+# Minimal example: every default, just `include:` the Component.
+#
+# Requires FACTORY_API_KEY and GITLAB_TOKEN to be set as masked CI/CD
+# variables. See .gitlab-ci.example.yml for the annotated version.
+
+include:
+  - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/gitlab/templates/review.yml"
+
+droid-review:
+  variables:
+    FACTORY_API_KEY: $FACTORY_API_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN
