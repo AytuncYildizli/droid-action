@@ -1,0 +1,9 @@
+# Example project-root .gitlab-ci.yml.
+#
+# If the project doesn't have a .gitlab-ci.yml yet, create one with at
+# minimum the include line below. If it already has one, just append the
+# `- local: "factory/droid-review.yml"` entry to its existing `include:`
+# block (or add a new `include:` block if there isn't one).
+
+include:
+  - local: "factory/droid-review.yml"

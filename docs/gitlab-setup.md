@@ -17,8 +17,9 @@ droid
 
 It detects GitLab, asks which account should be the poster of review
 comments (you supply its PAT as `GITLAB_TOKEN`), asks the configuration
-questions below, generates the `.gitlab-ci.yml`, and opens an MR /
-direct-commits to the target project(s).
+questions below, drops `factory/droid-review.yml` in your project, wires
+it into `.gitlab-ci.yml`, and opens an MR / direct-commits to the target
+project(s).
 
 ## Manual installation
 
@@ -32,16 +33,17 @@ direct-commits to the target project(s).
 
 ### 2. Add the CI/CD Component
 
-Drop-in samples live in [`gitlab/examples/`](../gitlab/examples/):
+Drop-in samples live in [`gitlab/examples/`](../gitlab/examples/). The
+layout is two files:
 
-- [`.gitlab-ci.minimal.yml`](../gitlab/examples/.gitlab-ci.minimal.yml) — shortest possible, accepts every default.
-- [`.gitlab-ci.example.yml`](../gitlab/examples/.gitlab-ci.example.yml) — annotated with every input.
+- [`factory/droid-review.yml`](../gitlab/examples/factory/droid-review.yml) — self-contained config (include + inputs + variables). Drop verbatim.
+- [`.gitlab-ci.yml`](../gitlab/examples/.gitlab-ci.yml) — project-root entry point. If you already have one, append the include line below to its `include:` block.
 
-The minimal form looks like this; create or extend `.gitlab-ci.yml` in your project with:
+**`factory/droid-review.yml`** (drop into your project):
 
 ```yaml
 include:
-  - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/gitlab/templates/review.yml"
+  - remote: "https://raw.githubusercontent.com/Factory-AI/droid-action/main/gitlab/templates/droid-review.yml"
     inputs:
       automatic_review: "true"
       automatic_security_review: "false"
@@ -56,8 +58,15 @@ droid-review:
     GITLAB_TOKEN: $GITLAB_TOKEN
 ```
 
-> The `include:` URL is pinned to `@main`, which tracks the latest stable
-> cut of droid-action.
+**`.gitlab-ci.yml`** (project root, just needs the one include line):
+
+```yaml
+include:
+  - local: "factory/droid-review.yml"
+```
+
+> The remote `include:` URL is pinned to `@main`, which tracks the
+> latest stable cut of droid-action.
 
 ### 3. Push an MR
 

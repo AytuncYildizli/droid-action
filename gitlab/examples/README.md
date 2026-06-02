@@ -1,23 +1,21 @@
 # GitLab examples
 
-Drop-in `.gitlab-ci.yml` samples for consuming the droid-action GitLab
-CI/CD Component.
+Two-file layout for consuming the droid-action GitLab CI/CD Component:
 
-| File                     | When to use                                                                                                    |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `.gitlab-ci.minimal.yml` | Shortest possible — `include:` the review template, accept every default. Good starting point.                 |
-| `.gitlab-ci.example.yml` | Annotated. Every input spelled out with comments explaining what it does and what the safe defaults look like. |
+```
+your-project/
+├── .gitlab-ci.yml                  # gains one `include:` line
+└── factory/
+    └── droid-review.yml            # self-contained droid-review config
+```
 
-Both samples wire the same two required CI/CD variables:
+| File                          | Where it lives in your project                     | Purpose                                                                                       |
+| ----------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `factory/droid-review.yml`    | drop verbatim                                      | Self-contained config: includes the remote Component, sets inputs, wires CI/CD variables.     |
+| `.gitlab-ci.yml`              | append one `include:` line if the file exists      | Project-root entry point. Just needs to include `factory/droid-review.yml`.                   |
 
-- `FACTORY_API_KEY` — get one at <https://app.factory.ai/settings/api-keys>.
-- `GITLAB_TOKEN` — a personal access token with `api` scope, owned by
-  whichever GitLab user/account should be the poster of review comments.
-  To change the poster later, replace this variable's value.
+The two required CI/CD variables (`FACTORY_API_KEY`, `GITLAB_TOKEN`) are set
+in the GitLab UI under **Project → Settings → CI/CD → Variables** (or at
+the group level for org-wide rollout), masked and unprotected.
 
-Set both as **masked** CI/CD variables at the level you want the review
-to apply (project, subgroup, or top-level group).
-
-For the full input reference (model overrides, security review,
-suggestion blocks, etc.) see the docs at
-[`docs/gitlab-setup.md`](../../docs/gitlab-setup.md).
+For the full input reference see the docs at [`docs/gitlab-setup.md`](../../docs/gitlab-setup.md).
