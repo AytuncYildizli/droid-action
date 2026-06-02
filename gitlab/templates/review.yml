@@ -54,7 +54,8 @@ spec:
       description: |
         Git ref (tag/branch/sha) of droid-action to clone at runtime.
         The same ref SHOULD match the `include: remote:` URL above.
-      default: "dev"
+        Internal: most users leave this at the default.
+      default: "main"
     stage:
       description: "GitLab CI stage to assign the droid-review job to."
       default: "test"

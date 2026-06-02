@@ -19,6 +19,5 @@ Set both as **masked** CI/CD variables at the level you want the review
 to apply (project, subgroup, or top-level group).
 
 For the full input reference (model overrides, security review,
-suggestion blocks, custom stage, etc.) see
-[`../templates/review.yml`](../templates/review.yml) or the docs at
+suggestion blocks, etc.) see the docs at
 [`docs/gitlab-setup.md`](../../docs/gitlab-setup.md).
