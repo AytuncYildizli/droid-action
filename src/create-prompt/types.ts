@@ -1,4 +1,5 @@
 import type { GitHubContext } from "../github/context";
+import type { ReviewArtifactPaths } from "../core/review/artifacts/types";
 
 export type CommonFields = {
   repository: string;
@@ -103,11 +104,7 @@ export type EventData =
   | PullRequestEvent
   | PullRequestTargetEvent;
 
-export type ReviewArtifacts = {
-  diffPath: string;
-  commentsPath: string;
-  descriptionPath: string;
-};
+export type ReviewArtifacts = ReviewArtifactPaths;
 
 export type PreparedContext = CommonFields & {
   eventData: EventData;
