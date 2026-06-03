@@ -1,0 +1,213 @@
+# GitLab CI/CD Component: droid-review
+#
+# Automated Droid code review on merge requests. Two-pass pipeline
+# (candidate generation + validator), inline MR comments, sticky tracking
+# note with telemetry, optional parallel security-reviewer subagent.
+#
+# Consumed via:
+#   include:
+#     - project: "factory-components/droid-action"
+#       ref: main
+#       file: "/templates/droid-review.yml"
+#
+# Or, once Catalog-published:
+#   include:
+#     - component: gitlab.com/factory-components/droid-action/droid-review@<tag>
+#
+# Catalog requires this file to live at `templates/<name>.yml`.
+# See ./README.md for the full directory contract.
+
+spec:
+  inputs:
+    automatic_review:
+      description: "Run code review automatically on every MR event."
+      default: "true"
+    review_depth:
+      description: "Review depth preset: `shallow` (fast) or `deep` (thorough)."
+      default: "deep"
+    review_model:
+      description: "Override the model used for code review. Empty = use depth preset."
+      default: ""
+    reasoning_effort:
+      description: "Override reasoning effort. Empty = use depth preset."
+      default: ""
+    include_suggestions:
+      description: |
+        Include code suggestion blocks in review comments when the fix is
+        high-confidence. Set to "false" to disable suggestion blocks
+        entirely. Mirrors the GitHub action's `include_suggestions` input.
+      default: "true"
+    automatic_security_review:
+      description: |
+        Automatically run a security-focused review subagent in parallel
+        with the regular code review on every MR pipeline. Findings are
+        prefixed with `[security]` and posted alongside code-review
+        comments. Mirrors the GitHub action's `automatic_security_review`
+        input. The security-review skill is built into the Droid CLI; no
+        plugin install is required.
+      default: "false"
+    security_block_on_critical:
+      description: |
+        When the security reviewer reports CRITICAL findings, block merge
+        of the MR. Mirrors the GitHub action's `security_block_on_critical`
+        input. Defaults to `"true"`.
+      default: "true"
+    security_block_on_high:
+      description: |
+        When the security reviewer reports HIGH findings, block merge of
+        the MR. Mirrors the GitHub action's `security_block_on_high` input.
+        Defaults to `"false"`.
+      default: "false"
+    settings:
+      description: |
+        Droid Exec settings as a JSON string or a path to a JSON file.
+        Merged into ~/.factory/droid/settings.json on the runner before
+        `droid exec` runs. Mirrors the GitHub action's `settings` input.
+      default: ""
+    droid_action_repo:
+      description: |
+        Git repo (clone URL) of droid-action. Defaults to the gitlab.com
+        mirror so GitLab runners with restricted egress only need
+        gitlab.com + app.factory.ai access. Override if you mirror it
+        privately.
+      default: "https://gitlab.com/factory-components/droid-action.git"
+    droid_action_ref:
+      description: |
+        Git tag or branch of droid-action to clone at runtime (SHAs are
+        not supported because the clone uses `--branch`). The same ref
+        SHOULD match the `include: remote:` URL above.
+        Internal: most users leave this at the default.
+      default: "main"
+    stage:
+      description: |
+        GitLab CI stage to assign the droid-review job to. The consuming
+        project's `.gitlab-ci.yml` must include this stage in its
+        `stages:` list (or omit the list to use the default ordering).
+      default: "test"
+---
+droid-review:
+  stage: $[[ inputs.stage ]]
+  image: oven/bun:1.2.11
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    DROID_STATE_FILE: "$CI_PROJECT_DIR/.droid-state.json"
+    DROID_PROMPT_FILE: "/tmp/droid-prompts/droid-prompt.txt"
+    DROID_ACTION_DIR: "/tmp/droid-action"
+    DROID_ACTION_REPO: "$[[ inputs.droid_action_repo ]]"
+    DROID_ACTION_REF: "$[[ inputs.droid_action_ref ]]"
+    AUTOMATIC_REVIEW: "$[[ inputs.automatic_review ]]"
+    REVIEW_DEPTH: "$[[ inputs.review_depth ]]"
+    REVIEW_MODEL: "$[[ inputs.review_model ]]"
+    REASONING_EFFORT: "$[[ inputs.reasoning_effort ]]"
+    INCLUDE_SUGGESTIONS: "$[[ inputs.include_suggestions ]]"
+    AUTOMATIC_SECURITY_REVIEW: "$[[ inputs.automatic_security_review ]]"
+    SECURITY_BLOCK_ON_CRITICAL: "$[[ inputs.security_block_on_critical ]]"
+    SECURITY_BLOCK_ON_HIGH: "$[[ inputs.security_block_on_high ]]"
+    DROID_SETTINGS: "$[[ inputs.settings ]]"
+    DROID_SUCCESS: "true"
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq --no-install-recommends git ca-certificates curl
+    - git clone --depth 1 --branch "$DROID_ACTION_REF" "$DROID_ACTION_REPO" "$DROID_ACTION_DIR"
+    - cd "$DROID_ACTION_DIR" && bun install --frozen-lockfile
+    - cd "$CI_PROJECT_DIR"
+    - curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://app.factory.ai/cli | sh
+    - export PATH="$HOME/.local/bin:$PATH"
+    - droid --version
+    # Copy bundled custom droids (e.g. security-reviewer) into the runner's
+    # ~/.factory/droids so the Skill / Task subagents can find them. Mirrors
+    # the GitHub action's "Setup Custom Droids" step.
+    - mkdir -p ~/.factory/droids
+    - |
+      if [ -d "$DROID_ACTION_DIR/.factory/droids" ]; then
+        cp -r "$DROID_ACTION_DIR/.factory/droids/." ~/.factory/droids/
+        echo "Copied custom droids from $DROID_ACTION_DIR/.factory/droids to ~/.factory/droids"
+      fi
+  script:
+    - export PATH="$HOME/.local/bin:$PATH"
+    - |
+      if ! bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-prepare.ts"; then
+        export DROID_SUCCESS=false
+        echo "gitlab-prepare exited non-zero" > /tmp/droid-error.txt
+        exit 1
+      fi
+    - |
+      # Skip droid exec if prepare decided not to review.
+      if ! grep -q '"shouldRunReview": true' "$DROID_STATE_FILE"; then
+        echo "shouldRunReview=false in state; skipping droid exec."
+        exit 0
+      fi
+    - |
+      # Source the resolved env shim from gitlab-prepare to expose
+      # RESOLVED_MODEL / RESOLVED_REASONING_EFFORT / DROID_MR_IID /
+      # DROID_TRACKING_NOTE_ID for both droid exec calls and the MCP server.
+      if [ -f /tmp/droid-prompts/resolved-env.sh ]; then
+        # shellcheck disable=SC1091
+        . /tmp/droid-prompts/resolved-env.sh
+      fi
+    - |
+      droid mcp remove gitlab_mr 2>/dev/null || true
+      droid mcp add gitlab_mr "bun run $DROID_ACTION_DIR/src/mcp/gitlab-mr-server.ts" \
+        --env CI_PROJECT_ID="$CI_PROJECT_ID" \
+        --env CI_API_V4_URL="$CI_API_V4_URL" \
+        --env GITLAB_TOKEN="$GITLAB_TOKEN" \
+        --env DROID_MR_IID="$DROID_MR_IID" \
+        --env DROID_TRACKING_NOTE_ID="$DROID_TRACKING_NOTE_ID"
+    - |
+      # ---- Pass 1: candidate generation ----
+      # Note: gitlab_mr___submit_review and the MR-mutation tools are
+      # NOT included here. Pass 1 must only WRITE the candidates JSON.
+      set -o pipefail
+      PASS1_TOOLS="Read,Grep,Glob,LS,Execute,Edit,Create,ApplyPatch,Task,Skill,FetchUrl"
+      PASS1_LOG="/tmp/droid-prompts/pass1-output.jsonl"
+      DROID_ARGS="exec -f $DROID_PROMPT_FILE --enabled-tools $PASS1_TOOLS --output-format stream-json --skip-permissions-unsafe --tag code-review"
+      if [ -n "$RESOLVED_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $RESOLVED_MODEL"; fi
+      if [ -n "$RESOLVED_REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $RESOLVED_REASONING_EFFORT"; fi
+      echo "Running Pass 1 (candidates): droid $DROID_ARGS"
+      if ! droid $DROID_ARGS 2>&1 | tee "$PASS1_LOG"; then
+        export DROID_SUCCESS=false
+        echo "droid exec pass 1 (candidates) failed" > /tmp/droid-error.txt
+        exit 1
+      fi
+    - |
+      # ---- Prepare Pass 2 prompt ----
+      if ! bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-prepare-validator.ts"; then
+        export DROID_SUCCESS=false
+        echo "gitlab-prepare-validator failed" > /tmp/droid-error.txt
+        exit 1
+      fi
+    - |
+      # ---- Pass 2: validator (posts approved comments) ----
+      # gitlab_mr___submit_review and gitlab_mr___update_tracking_note are
+      # the only MR-mutation tools we expose. The model batches all approved
+      # findings into a single submit_review call.
+      set -o pipefail
+      PASS2_TOOLS="Read,Grep,Glob,LS,Execute,Edit,Create,ApplyPatch,Skill,gitlab_mr___submit_review,gitlab_mr___update_tracking_note"
+      PASS2_LOG="/tmp/droid-prompts/pass2-output.jsonl"
+      DROID_ARGS="exec -f $DROID_PROMPT_FILE --enabled-tools $PASS2_TOOLS --output-format stream-json --skip-permissions-unsafe --tag code-review"
+      if [ -n "$RESOLVED_MODEL" ]; then DROID_ARGS="$DROID_ARGS --model $RESOLVED_MODEL"; fi
+      if [ -n "$RESOLVED_REASONING_EFFORT" ]; then DROID_ARGS="$DROID_ARGS --reasoning-effort $RESOLVED_REASONING_EFFORT"; fi
+      echo "Running Pass 2 (validator): droid $DROID_ARGS"
+      if ! droid $DROID_ARGS 2>&1 | tee "$PASS2_LOG"; then
+        export DROID_SUCCESS=false
+        echo "droid exec pass 2 (validator) failed" > /tmp/droid-error.txt
+        exit 1
+      fi
+  after_script:
+    - export PATH="$HOME/.local/bin:$PATH"
+    - export DROID_ERROR_DETAILS="$(cat /tmp/droid-error.txt 2>/dev/null || true)"
+    - export DROID_PASS1_LOG="/tmp/droid-prompts/pass1-output.jsonl"
+    - export DROID_PASS2_LOG="/tmp/droid-prompts/pass2-output.jsonl"
+    # Stage debug artifacts that live outside CI_PROJECT_DIR so GitLab can
+    # capture them. Failure here must not break the after_script chain.
+    - mkdir -p "$CI_PROJECT_DIR/.droid-debug/prompts" || true
+    - cp -r /tmp/droid-prompts/. "$CI_PROJECT_DIR/.droid-debug/prompts/" 2>/dev/null || true
+    - cp /tmp/droid-error.txt "$CI_PROJECT_DIR/.droid-debug/" 2>/dev/null || true
+    - bun run "$DROID_ACTION_DIR/src/entrypoints/gitlab-update-comment-link.ts" || true
+  artifacts:
+    when: always
+    paths:
+      - .droid-state.json
+      - .droid-debug/
+    expire_in: 1 week
