@@ -29,7 +29,7 @@ export type TrackingNoteTelemetry = NonNullable<
 >;
 export type TrackingNoteOptions = ReviewTrackingFields;
 
-const SECURITY_BADGE =
+export const SECURITY_BADGE =
   "![security](https://img.shields.io/badge/security%20review-enabled-blue?style=flat-square&logo=shield) ";
 
 const STATE_HEADER: Record<TrackingNoteState, string> = {

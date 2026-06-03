@@ -1,4 +1,5 @@
 import type { ReviewTerminology } from "../../core/review/prompts/types";
+import { SECURITY_BADGE } from "../operations/tracking-note";
 
 export const GITLAB_TERMINOLOGY: ReviewTerminology = {
   entityNoun: "MR",
@@ -31,8 +32,7 @@ export const GITLAB_TERMINOLOGY: ReviewTerminology = {
   summaryPostingExtraExclusion: "",
   approvalChangesNote:
     "Do not approve the MR or request changes (GitLab approval rules are handled out-of-band).",
-  securityBadgeInstruction:
-    "If any approved comments contain `[security]` in their body, prepend a security badge to the tracking note: `![Security Review](https://img.shields.io/badge/security%20review-ran-blue)`. This indicates that security analysis was performed as part of the review.",
+  securityBadgeInstruction: `If any approved comments contain \`[security]\` in their body, ensure a security badge is prepended to the tracking note body: \`${SECURITY_BADGE.trim()}\`. This indicates that security analysis was performed as part of the review.`,
 };
 
 /**
