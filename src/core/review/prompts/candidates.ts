@@ -57,7 +57,7 @@ This subagent runs **concurrently** with the code review subagents during Step 2
 Spawn it with:
 - \`subagent_type\`: "security-reviewer"
 - \`description\`: "Security review"
-- \`prompt\`: Include the full ${t.entityNoun} context (${t.repoLabel.toLowerCase()}, ${t.entityNoun} ${t.metaEntityNumberKey === "prNumber" ? "number" : "IID"}, head SHA, ${t.baseRefLabel.toLowerCase()}) and the paths to precomputed data files (diff, description, existing comments). The security-reviewer will invoke the security-review skill and return a JSON array of security findings.
+- \`prompt\`: Include the full ${t.entityNoun} context (${t.repoLabel.toLowerCase()}, ${t.entityNoun} ${t.metaEntityNumberKey === "prNumber" ? "number" : "IID"}, head SHA, ${t.baseRefShortLabel}) and the paths to precomputed data files (diff, description, existing comments). The security-reviewer will invoke the security-review skill and return a JSON array of security findings.
 
 **IMPORTANT**: Spawn the security-reviewer in the SAME response as the code review subagents so they all run in parallel.
 

@@ -1,8 +1,9 @@
 /**
- * Small formatting helpers shared between the GitHub MCP comment server
- * and the GitLab tracking-note builder. Kept platform-agnostic so the
- * two renderers can stay independent while still producing identical
- * telemetry text (e.g. "1m 23s • $0.0042").
+ * Small formatting helpers for sticky review-tracking
+ * comments/notes. Currently consumed by the GitLab tracking-note
+ * builder (`src/gitlab/operations/tracking-note.ts`); kept platform-
+ * agnostic in core so the GitHub MCP comment server can adopt the same
+ * "1m 23s • $0.0042" rendering when its telemetry path is unified.
  */
 
 export function formatDurationMs(ms: number): string {

@@ -25,6 +25,8 @@ export interface ReviewTerminology {
   headShaLabel: string;
   /** Label for the target branch row (e.g. "PR Base Ref" or "MR Target Branch") */
   baseRefLabel: string;
+  /** Short form of the target-branch concept, used in narrative prose (e.g. "base ref" or "target branch") */
+  baseRefShortLabel: string;
   /** Label for the description artifact (e.g. "PR Description" or "MR Description") */
   descriptionLabel: string;
   /** Label for the diff artifact (e.g. "Full PR Diff" or "Full MR Diff") */

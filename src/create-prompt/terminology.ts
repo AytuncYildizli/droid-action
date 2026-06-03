@@ -9,6 +9,7 @@ export const GITHUB_TERMINOLOGY: ReviewTerminology = {
   headRefLabel: "PR Head Ref",
   headShaLabel: "PR Head SHA",
   baseRefLabel: "PR Base Ref",
+  baseRefShortLabel: "base ref",
   descriptionLabel: "PR Description",
   diffLabel: "Full PR Diff",
   metaRepoKey: "repo",

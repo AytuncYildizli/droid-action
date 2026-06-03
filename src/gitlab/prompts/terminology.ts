@@ -10,6 +10,7 @@ export const GITLAB_TERMINOLOGY: ReviewTerminology = {
   headRefLabel: "MR Source Branch",
   headShaLabel: "MR Head SHA",
   baseRefLabel: "MR Target Branch",
+  baseRefShortLabel: "target branch",
   descriptionLabel: "MR Description",
   diffLabel: "Full MR Diff",
   metaRepoKey: "project",
@@ -32,7 +33,7 @@ export const GITLAB_TERMINOLOGY: ReviewTerminology = {
   summaryPostingExtraExclusion: "",
   approvalChangesNote:
     "Do not approve the MR or request changes (GitLab approval rules are handled out-of-band).",
-  securityBadgeInstruction: `If any approved comments contain \`[security]\` in their body, ensure a security badge is prepended to the tracking note body: \`${SECURITY_BADGE.trim()}\`. This indicates that security analysis was performed as part of the review.`,
+  securityBadgeInstruction: `If any approved comments contain \`[security]\` in their body, ensure a security badge is prepended to the tracking note body using exactly this markdown image (no surrounding backticks or code fences): ${SECURITY_BADGE.trim()} — this indicates that security analysis was performed as part of the review.`,
 };
 
 /**
