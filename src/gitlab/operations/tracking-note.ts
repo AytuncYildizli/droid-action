@@ -3,46 +3,33 @@
  *
  * The tracking note carries a hidden HTML marker so we can find and
  * update the same note across retries instead of creating duplicates.
+ *
+ * The state machine (running/success/failure), telemetry shape, and
+ * formatting helpers are platform-agnostic and live in
+ * `src/core/review/tracking/`. This file owns the GitLab-specific body
+ * rendering, including the markdown layout, the security badge, the
+ * error-details accordion, and the hidden marker conventions.
  */
+
+import {
+  formatCostUsd,
+  formatDurationMs,
+} from "../../core/review/tracking/format";
+import type {
+  ReviewTrackingFields,
+  ReviewTrackingState,
+} from "../../core/review/tracking/types";
 
 export const DROID_TRACKING_MARKER = "<!-- droid-tracking-note -->";
 export const DROID_SECURITY_BADGE_MARKER = "<!-- droid-security-badge -->";
 
-export type TrackingNoteState = "running" | "success" | "failure";
+export type TrackingNoteState = ReviewTrackingState;
+export type TrackingNoteTelemetry = NonNullable<
+  ReviewTrackingFields["telemetry"]
+>;
+export type TrackingNoteOptions = ReviewTrackingFields;
 
-export type TrackingNoteTelemetry = {
-  totalNumTurns?: number | null;
-  totalDurationMs?: number | null;
-  totalCostUsd?: number | null;
-  pass1SessionId?: string | null;
-  pass2SessionId?: string | null;
-};
-
-export interface TrackingNoteOptions {
-  state: TrackingNoteState;
-  pipelineUrl?: string | null;
-  jobUrl?: string | null;
-  triggerUsername?: string | null;
-  errorDetails?: string | null;
-  securityReviewRan?: boolean;
-  telemetry?: TrackingNoteTelemetry | null;
-}
-
-function formatDurationMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remSec = Math.round(seconds - minutes * 60);
-  return `${minutes}m ${remSec}s`;
-}
-
-function formatCostUsd(usd: number): string {
-  if (usd >= 1) return `$${usd.toFixed(2)}`;
-  return `$${usd.toFixed(4)}`;
-}
-
-const SECURITY_BADGE =
+export const SECURITY_BADGE =
   "![security](https://img.shields.io/badge/security%20review-enabled-blue?style=flat-square&logo=shield) ";
 
 const STATE_HEADER: Record<TrackingNoteState, string> = {

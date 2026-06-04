@@ -9,19 +9,17 @@
  * These mirror the artifacts the GitHub Action precomputes
  * (`pr.diff`, `existing_comments.json`, `pr_description.txt`) so the GitLab
  * Pass-1 / Pass-2 prompts can refer to them by stable paths and the model
- * doesn't have to round-trip through MCP tools to fetch them.
+ * doesn't have to round-trip through MCP tools to fetch them. The disk
+ * write itself uses the shared `writeReviewArtifacts` helper in
+ * `src/core/review/artifacts/write.ts`.
  */
 
-import * as fs from "fs/promises";
-import * as path from "path";
+import { writeReviewArtifacts } from "../../core/review/artifacts/write";
+import type { ReviewArtifactPaths } from "../../core/review/artifacts/types";
 import type { GitlabClient } from "../api/client";
 import type { GitlabMr, GitlabMrChanges, GitlabNote } from "../types";
 
-export type GitlabReviewArtifactPaths = {
-  diffPath: string;
-  commentsPath: string;
-  descriptionPath: string;
-};
+export type GitlabReviewArtifactPaths = ReviewArtifactPaths;
 
 export type GitlabReviewArtifacts = GitlabReviewArtifactPaths & {
   mr: GitlabMr;
@@ -62,33 +60,25 @@ export async function computeReviewArtifacts(
 ): Promise<GitlabReviewArtifacts> {
   const { client, projectId, mrIid, outDir } = opts;
 
-  await fs.mkdir(outDir, { recursive: true });
-
   const [mr, changes, notes] = await Promise.all([
     client.getMr(projectId, mrIid),
     client.getMrChanges(projectId, mrIid),
     client.listNotes(projectId, mrIid),
   ]);
 
-  const diffPath = path.join(outDir, "mr.diff");
-  const commentsPath = path.join(outDir, "existing_comments.json");
-  const descriptionPath = path.join(outDir, "mr_description.txt");
+  const paths = await writeReviewArtifacts(
+    outDir,
+    {
+      diff: buildDiffContent(changes),
+      comments: notes,
+      description: buildDescriptionContent(mr),
+    },
+    {
+      diff: "mr.diff",
+      comments: "existing_comments.json",
+      description: "mr_description.txt",
+    },
+  );
 
-  const diffContent = buildDiffContent(changes);
-  const descriptionContent = buildDescriptionContent(mr);
-
-  await Promise.all([
-    fs.writeFile(diffPath, diffContent),
-    fs.writeFile(commentsPath, JSON.stringify(notes, null, 2)),
-    fs.writeFile(descriptionPath, descriptionContent),
-  ]);
-
-  return {
-    diffPath,
-    commentsPath,
-    descriptionPath,
-    mr,
-    changes,
-    notes,
-  };
+  return { ...paths, mr, changes, notes };
 }
