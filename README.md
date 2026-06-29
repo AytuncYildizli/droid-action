@@ -260,7 +260,7 @@ This input is required.
 
 To leave comments and approvals on your PRs, Droid needs a GitHub token. There are two ways to provide one:
 
-- **Factory Droid GitHub App (default, recommended).** If you don't pass a token, the action securely requests one for the installed Factory Droid GitHub App. For most teams this is all you need: install the app on your repositories. It requires the `id-token: write` permission so the action can request the token:
+- **Factory Droid GitHub App (default, recommended).** If you don't pass a token, the action securely requests one for the installed Factory Droid GitHub App. For most teams this is all you need: install the app on your repositories from [app.factory.ai/settings/organization](https://app.factory.ai/settings/organization). It requires the `id-token: write` permission so the action can request the token:
 
   ```yaml
   permissions:
