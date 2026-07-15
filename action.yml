@@ -345,7 +345,7 @@ runs:
         GITHUB_EVENT_NAME: ${{ github.event_name }}
         TRIGGER_COMMENT_ID: ${{ github.event.comment.id }}
         IS_PR: ${{ github.event.issue.pull_request != null || github.event_name == 'pull_request_target' || github.event_name == 'pull_request_review_comment' }}
-        DROID_SUCCESS: ${{ (steps.prepare.outputs.run_code_review == 'true' && steps.droid_validator.outputs.conclusion == 'success') || (steps.prepare.outputs.run_code_review != 'true' && steps.droid.outputs.conclusion == 'success') }}
+        DROID_SUCCESS: ${{ (steps.prepare.outputs.run_code_review == 'true' && (steps.prepare_validator.outputs.validator_should_run == 'false' ? steps.droid.outputs.conclusion == 'success' : steps.droid_validator.outputs.conclusion == 'success')) || (steps.prepare.outputs.run_code_review != 'true' && steps.droid.outputs.conclusion == 'success') }}
         TRIGGER_USERNAME: ${{ github.event.comment.user.login || github.event.issue.user.login || github.event.pull_request.user.login || github.event.sender.login || github.triggering_actor || github.actor || '' }}
         PREPARE_SUCCESS: ${{ steps.prepare.outcome == 'success' }}
         PREPARE_ERROR: ${{ steps.prepare.outputs.prepare_error || '' }}
