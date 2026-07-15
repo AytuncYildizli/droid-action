@@ -307,7 +307,7 @@ runs:
 
     - name: Run Droid Exec (validator)
       id: droid_validator
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.run_code_review == 'true'
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.run_code_review == 'true' && steps.prepare_validator.outputs.validator_should_run != 'false'
       shell: bash
       run: |
 

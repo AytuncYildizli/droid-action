@@ -273,7 +273,7 @@ describe("MCP Server Registration", () => {
   });
 
   describe("Error Handling", () => {
-    test("should fail fast when MCP server registration fails", async () => {
+    test("should fail when MCP server registration fails after retries", async () => {
       const mcpTools = JSON.stringify({
         mcpServers: {
           failing_server: {
@@ -298,7 +298,7 @@ describe("MCP Server Registration", () => {
       } finally {
         await cleanupTempDir(tempDir);
       }
-    });
+    }, 30000); // Allow time for retry backoff (3 attempts x 2s+4s delays)
 
     test("should not attempt MCP registration when config is not provided", () => {
       const options: DroidOptions = {};

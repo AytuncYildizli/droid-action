@@ -2,6 +2,7 @@ import { execSync } from "child_process";
 import { writeFile, mkdir } from "fs/promises";
 import type { Octokits } from "../api/client";
 import type { ReviewArtifacts } from "../../create-prompt/types";
+import { retryWithBackoff } from "../../utils/retry";
 
 const DIFF_MAX_BUFFER = 50 * 1024 * 1024; // 50MB buffer for large diffs
 
@@ -59,15 +60,22 @@ export async function computeAndStoreDiff(
     });
   } catch {
     // Fallback: use gh CLI to get the diff (works even with shallow clones)
+    // Retry since gh CLI can have transient rate-limit or network failures
     if (options?.githubToken && options?.prNumber) {
       console.log(
         "Git merge-base failed, falling back to gh pr diff for PR diff",
       );
-      diff = execSync(`gh pr diff ${options.prNumber}`, {
-        encoding: "utf8",
-        maxBuffer: DIFF_MAX_BUFFER,
-        env: { ...process.env, GH_TOKEN: options.githubToken },
-      });
+      diff = await retryWithBackoff(
+        () =>
+          Promise.resolve(
+            execSync(`gh pr diff ${options.prNumber}`, {
+              encoding: "utf8",
+              maxBuffer: DIFF_MAX_BUFFER,
+              env: { ...process.env, GH_TOKEN: options.githubToken },
+            }),
+          ),
+        { maxAttempts: 3, initialDelayMs: 3000, maxDelayMs: 15000 },
+      );
     } else {
       throw new Error(
         "Git merge-base failed and no fallback credentials provided",
