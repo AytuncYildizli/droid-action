@@ -23,3 +23,15 @@ export type ReviewArtifactContents = {
   comments: unknown; // JSON-serializable
   description: string;
 };
+
+/**
+ * Naming convention for review-artifact files on disk. Each platform
+ * gets its own basename for the diff and description (pr.diff /
+ * mr.diff, pr_description.txt / mr_description.txt) but the existing
+ * comments file is platform-neutral.
+ */
+export type ReviewArtifactNames = {
+  diff: string;
+  comments: string;
+  description: string;
+};

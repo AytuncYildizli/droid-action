@@ -78,10 +78,9 @@ async function run(): Promise<void> {
     console.log(
       `Pass 1 candidates validated: ${parsed.comments.length} comments found`,
     );
-  } catch (e: any) {
-    console.error(
-      `Pass 1 candidates JSON is invalid or missing: ${e.message}`,
-    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`Pass 1 candidates JSON is invalid or missing: ${message}`);
     console.error(
       "Skipping Pass 2 (validator) to avoid a full pipeline failure",
     );

@@ -34,14 +34,14 @@ async function run() {
         console.log(
           `Pass 1 candidates validated: ${parsed.comments.length} comments found`,
         );
-      } catch (e: any) {
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
         console.error(
-          `Pass 1 candidates JSON is invalid or missing: ${e.message}`,
+          `Pass 1 candidates JSON is invalid or missing: ${message}`,
         );
         console.error(
           "Skipping Pass 2 (validator) to avoid a full pipeline failure",
         );
-        core.setOutput("contains_trigger", "false");
         core.setOutput("validator_should_run", "false");
         core.notice(
           "Pass 1 candidates validation failed - skipping validator pass",

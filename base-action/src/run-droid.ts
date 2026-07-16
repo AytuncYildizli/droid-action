@@ -3,50 +3,13 @@ import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { stat } from "fs/promises";
 import { parse as parseShellArgs } from "shell-quote";
+import { retryWithBackoff } from "./utils/retry";
 
 const execAsync = promisify(exec);
 
-/**
- * Retry an async operation with exponential backoff.
- * Used for transient failures (Droid Exec, MCP registration, network calls).
- */
-async function retryWithBackoff<T>(
-  operation: () => Promise<T>,
-  options: {
-    maxAttempts?: number;
-    initialDelayMs?: number;
-    maxDelayMs?: number;
-    backoffFactor?: number;
-  } = {},
-): Promise<T> {
-  const {
-    maxAttempts = 3,
-    initialDelayMs = 5000,
-    maxDelayMs = 20000,
-    backoffFactor = 2,
-  } = options;
-
-  let delayMs = initialDelayMs;
-  let lastError: Error | undefined;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      console.log(`Attempt ${attempt} of ${maxAttempts}...`);
-      return await operation();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      console.error(`Attempt ${attempt} failed:`, lastError.message);
-
-      if (attempt < maxAttempts) {
-        console.log(`Retrying in ${delayMs / 1000} seconds...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        delayMs = Math.min(delayMs * backoffFactor, maxDelayMs);
-      }
-    }
-  }
-
-  console.error(`Operation failed after ${maxAttempts} attempts`);
-  throw lastError;
+/** Redact inline `--env KEY=value` secrets before logging a command string. */
+function redactEnvSecrets(text: string): string {
+  return text.replace(/--env\s+(\S+?)=\S+/g, "--env $1=***");
 }
 
 const BASE_ARGS = [
@@ -181,13 +144,6 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
             .filter(Boolean)
             .join(" ");
 
-          // Remove existing server if present (ignore errors)
-          try {
-            await execAsync(`droid mcp remove ${name}`);
-          } catch (_) {
-            // Ignore - server might not exist
-          }
-
           // Build env flags
           const envFlags = Object.entries(def.env || {})
             .map(([k, v]) => `--env ${k}=${String(v)}`)
@@ -204,17 +160,25 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
                 } catch (_) {
                   // Ignore - server might not exist
                 }
-                await execAsync(addCmd, { env: { ...process.env } });
+                try {
+                  await execAsync(addCmd, { env: { ...process.env } });
+                } catch (err) {
+                  // Redact inline --env secrets before they reach any log or rethrow.
+                  const message =
+                    err instanceof Error ? err.message : String(err);
+                  throw new Error(redactEnvSecrets(message));
+                }
               },
               { maxAttempts: 3, initialDelayMs: 2000, maxDelayMs: 10000 },
             );
             console.log(`  ✓ Registered MCP server: ${name}`);
-          } catch (e: any) {
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
             console.error(
               `  ✗ Failed to register MCP server ${name}:`,
-              e.message,
+              message,
             );
-            throw e;
+            throw new Error(message);
           }
         }
       }
@@ -288,20 +252,12 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
     );
   }
 
-  // Run Droid Exec with retry for transient failures
-  const maxRetries = 2; // 1 initial attempt + 2 retries = 3 total
+  // Run Droid Exec with retry for transient failures. Uses the shared
+  // retryWithBackoff so backoff timing lives in one place (3 total attempts,
+  // 5s then 10s delays).
   let lastExitCode = 1;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) {
-      console.log(
-        `Droid Exec retry attempt ${attempt}/${maxRetries} (previous exit code: ${lastExitCode})...`,
-      );
-      const retryDelayMs = Math.min(5000 * Math.pow(2, attempt - 1), 30000);
-      console.log(`Waiting ${retryDelayMs / 1000}s before retry...`);
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-    }
-
+  const runDroidOnce = (): Promise<number> => {
     const droidProcess = spawn(droidExecutable, config.droidArgs, {
       stdio: ["ignore", "pipe", "inherit"],
       env: {
@@ -366,7 +322,7 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
     });
 
     // Wait for Droid Exec to finish
-    lastExitCode = await new Promise<number>((resolve) => {
+    return new Promise<number>((resolve) => {
       droidProcess.on("close", (code) => {
         resolve(code || 0);
       });
@@ -376,19 +332,27 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
         resolve(1);
       });
     });
+  };
 
-    if (lastExitCode === 0) {
-      core.setOutput("conclusion", "success");
-      return;
-    }
-
-    console.log(`Droid Exec exited with code ${lastExitCode}`);
+  try {
+    await retryWithBackoff(
+      async () => {
+        lastExitCode = await runDroidOnce();
+        if (lastExitCode !== 0) {
+          console.log(`Droid Exec exited with code ${lastExitCode}`);
+          throw new Error(`Droid Exec exited with code ${lastExitCode}`);
+        }
+      },
+      { maxAttempts: 3, initialDelayMs: 5000, maxDelayMs: 20000 },
+    );
+    core.setOutput("conclusion", "success");
+    return;
+  } catch (_) {
+    // All retry attempts exhausted
+    console.error(
+      `Droid Exec failed after 3 total attempts (exit code: ${lastExitCode})`,
+    );
+    core.setOutput("conclusion", "failure");
+    process.exit(lastExitCode);
   }
-
-  // All retry attempts exhausted
-  console.error(
-    `Droid Exec failed after ${maxRetries + 1} total attempts (exit code: ${lastExitCode})`,
-  );
-  core.setOutput("conclusion", "failure");
-  process.exit(lastExitCode);
 }
