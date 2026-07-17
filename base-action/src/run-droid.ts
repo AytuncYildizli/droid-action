@@ -3,8 +3,14 @@ import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { stat } from "fs/promises";
 import { parse as parseShellArgs } from "shell-quote";
+import { retryWithBackoff } from "./utils/retry";
 
 const execAsync = promisify(exec);
+
+/** Redact inline `--env KEY=value` secrets before logging a command string. */
+function redactEnvSecrets(text: string): string {
+  return text.replace(/--env\s+(\S+?)=\S+/g, "--env $1=***");
+}
 
 const BASE_ARGS = [
   "exec",
@@ -138,13 +144,6 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
             .filter(Boolean)
             .join(" ");
 
-          // Remove existing server if present (ignore errors)
-          try {
-            await execAsync(`droid mcp remove ${name}`);
-          } catch (_) {
-            // Ignore - server might not exist
-          }
-
           // Build env flags
           const envFlags = Object.entries(def.env || {})
             .map(([k, v]) => `--env ${k}=${String(v)}`)
@@ -153,14 +152,33 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
           const addCmd = `droid mcp add ${name} "${cmd}" ${envFlags}`.trim();
 
           try {
-            await execAsync(addCmd, { env: { ...process.env } });
+            await retryWithBackoff(
+              async () => {
+                // Remove existing server if present (ignore errors) before each attempt
+                try {
+                  await execAsync(`droid mcp remove ${name}`);
+                } catch (_) {
+                  // Ignore - server might not exist
+                }
+                try {
+                  await execAsync(addCmd, { env: { ...process.env } });
+                } catch (err) {
+                  // Redact inline --env secrets before they reach any log or rethrow.
+                  const message =
+                    err instanceof Error ? err.message : String(err);
+                  throw new Error(redactEnvSecrets(message));
+                }
+              },
+              { maxAttempts: 3, initialDelayMs: 2000, maxDelayMs: 10000 },
+            );
             console.log(`  ✓ Registered MCP server: ${name}`);
-          } catch (e: any) {
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
             console.error(
               `  ✗ Failed to register MCP server ${name}:`,
-              e.message,
+              message,
             );
-            throw e;
+            throw new Error(message);
           }
         }
       }
@@ -219,19 +237,6 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
   // Use custom executable path if provided, otherwise default to "droid"
   const droidExecutable = options.pathToDroidExecutable || "droid";
 
-  const droidProcess = spawn(droidExecutable, config.droidArgs, {
-    stdio: ["ignore", "pipe", "inherit"],
-    env: {
-      ...process.env,
-      ...config.env,
-    },
-  });
-
-  // Handle Droid process errors
-  droidProcess.on("error", (error) => {
-    console.error("Error spawning Droid process:", error);
-  });
-
   // Determine if full output should be shown
   // Show full output if explicitly set to "true" OR if GitHub Actions debug mode is enabled
   const isDebugMode = process.env.ACTIONS_STEP_DEBUG === "true";
@@ -247,74 +252,107 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
     );
   }
 
-  // Capture output for parsing execution metrics
-  let sessionId: string | undefined;
-  droidProcess.stdout.on("data", (data) => {
-    const text = data.toString();
+  // Run Droid Exec with retry for transient failures. Uses the shared
+  // retryWithBackoff so backoff timing lives in one place (3 total attempts,
+  // 5s then 10s delays).
+  let lastExitCode = 1;
 
-    // Try to parse as JSON and handle based on verbose setting
-    const lines = text.split("\n");
-    lines.forEach((line: string, index: number) => {
-      if (line.trim() === "") return;
-
-      try {
-        // Check if this line is a JSON object
-        const parsed = JSON.parse(line);
-        if (!sessionId && typeof parsed === "object" && parsed !== null) {
-          const detectedSessionId = parsed.session_id;
-          if (
-            typeof detectedSessionId === "string" &&
-            detectedSessionId.trim()
-          ) {
-            sessionId = detectedSessionId;
-            console.log(`Detected Droid session: ${sessionId}`);
-          }
-        }
-        const sanitizedOutput = sanitizeJsonOutput(parsed, showFullOutput);
-
-        if (sanitizedOutput) {
-          process.stdout.write(sanitizedOutput);
-          if (index < lines.length - 1 || text.endsWith("\n")) {
-            process.stdout.write("\n");
-          }
-        }
-      } catch (e) {
-        // Not a JSON object
-        if (showFullOutput) {
-          // In full output mode, print as is
-          process.stdout.write(line);
-          if (index < lines.length - 1 || text.endsWith("\n")) {
-            process.stdout.write("\n");
-          }
-        }
-        // In non-full-output mode, suppress non-JSON output
-      }
-    });
-  });
-
-  // Handle stdout errors
-  droidProcess.stdout.on("error", (error) => {
-    console.error("Error reading Droid stdout:", error);
-  });
-
-  // Wait for Droid Exec to finish
-  const exitCode = await new Promise<number>((resolve) => {
-    droidProcess.on("close", (code) => {
-      resolve(code || 0);
+  const runDroidOnce = (): Promise<number> => {
+    const droidProcess = spawn(droidExecutable, config.droidArgs, {
+      stdio: ["ignore", "pipe", "inherit"],
+      env: {
+        ...process.env,
+        ...config.env,
+      },
     });
 
+    // Handle Droid process errors
     droidProcess.on("error", (error) => {
-      console.error("Droid process error:", error);
-      resolve(1);
+      console.error("Error spawning Droid process:", error);
     });
-  });
 
-  // Set conclusion based on exit code
-  if (exitCode === 0) {
+    // Capture output for parsing execution metrics
+    let sessionId: string | undefined;
+    droidProcess.stdout.on("data", (data) => {
+      const text = data.toString();
+
+      // Try to parse as JSON and handle based on verbose setting
+      const lines = text.split("\n");
+      lines.forEach((line: string, index: number) => {
+        if (line.trim() === "") return;
+
+        try {
+          // Check if this line is a JSON object
+          const parsed = JSON.parse(line);
+          if (!sessionId && typeof parsed === "object" && parsed !== null) {
+            const detectedSessionId = parsed.session_id;
+            if (
+              typeof detectedSessionId === "string" &&
+              detectedSessionId.trim()
+            ) {
+              sessionId = detectedSessionId;
+              console.log(`Detected Droid session: ${sessionId}`);
+            }
+          }
+          const sanitizedOutput = sanitizeJsonOutput(parsed, showFullOutput);
+
+          if (sanitizedOutput) {
+            process.stdout.write(sanitizedOutput);
+            if (index < lines.length - 1 || text.endsWith("\n")) {
+              process.stdout.write("\n");
+            }
+          }
+        } catch (e) {
+          // Not a JSON object
+          if (showFullOutput) {
+            // In full output mode, print as is
+            process.stdout.write(line);
+            if (index < lines.length - 1 || text.endsWith("\n")) {
+              process.stdout.write("\n");
+            }
+          }
+          // In non-full-output mode, suppress non-JSON output
+        }
+      });
+    });
+
+    // Handle stdout errors
+    droidProcess.stdout.on("error", (error) => {
+      console.error("Error reading Droid stdout:", error);
+    });
+
+    // Wait for Droid Exec to finish
+    return new Promise<number>((resolve) => {
+      droidProcess.on("close", (code) => {
+        resolve(code || 0);
+      });
+
+      droidProcess.on("error", (error) => {
+        console.error("Droid process error:", error);
+        resolve(1);
+      });
+    });
+  };
+
+  try {
+    await retryWithBackoff(
+      async () => {
+        lastExitCode = await runDroidOnce();
+        if (lastExitCode !== 0) {
+          console.log(`Droid Exec exited with code ${lastExitCode}`);
+          throw new Error(`Droid Exec exited with code ${lastExitCode}`);
+        }
+      },
+      { maxAttempts: 3, initialDelayMs: 5000, maxDelayMs: 20000 },
+    );
     core.setOutput("conclusion", "success");
     return;
+  } catch (_) {
+    // All retry attempts exhausted
+    console.error(
+      `Droid Exec failed after 3 total attempts (exit code: ${lastExitCode})`,
+    );
+    core.setOutput("conclusion", "failure");
+    process.exit(lastExitCode);
   }
-
-  core.setOutput("conclusion", "failure");
-  process.exit(exitCode);
 }

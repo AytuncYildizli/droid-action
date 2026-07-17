@@ -63,6 +63,35 @@ async function run(): Promise<void> {
   const descriptionPath = ensure(state.descriptionPath, "descriptionPath");
   const headSha = ensure(state.headSha, "headSha");
 
+  // Validate that Pass 1 produced a valid candidates JSON file.
+  // If invalid or missing, skip Pass 2 gracefully rather than failing.
+  try {
+    const content = await fs.readFile(candidatesPath, "utf8");
+    const parsed = JSON.parse(content);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.comments)
+    ) {
+      throw new Error("Missing or invalid 'comments' array in candidates");
+    }
+    console.log(
+      `Pass 1 candidates validated: ${parsed.comments.length} comments found`,
+    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`Pass 1 candidates JSON is invalid or missing: ${message}`);
+    console.error(
+      "Skipping Pass 2 (validator) to avoid a full pipeline failure",
+    );
+    // Write a no-op prompt so droid exec exits cleanly
+    await fs.writeFile(
+      promptPath,
+      "No review findings to validate. Pass 1 candidates were invalid. Exit with success.",
+    );
+    return;
+  }
+
   const promptCtx: GitlabReviewPromptContext = {
     projectPath: state.projectPath,
     mrIid,
