@@ -240,6 +240,47 @@ jobs:
           security_scan_days: 7
 ```
 
+## Authentication
+
+Droid needs two separate kinds of access: permission to run Droid, and permission to post on your pull requests. You set them up independently.
+
+### 1. Factory API key (run Droid)
+
+Droid runs using your Factory API key. Create one at [app.factory.ai/settings/api-keys](https://app.factory.ai/settings/api-keys) and save it as a `FACTORY_API_KEY` secret in your repository or organization. Pass it to the action on every run:
+
+```yaml
+- uses: Factory-AI/droid-action@main
+  with:
+    factory_api_key: ${{ secrets.FACTORY_API_KEY }}
+```
+
+This input is required.
+
+### 2. GitHub access (post reviews)
+
+To leave comments and approvals on your PRs, Droid needs a GitHub token. There are two ways to provide one:
+
+- **Factory Droid GitHub App (default, recommended).** If you don't pass a token, the action securely requests one for the installed Factory Droid GitHub App. For most teams this is all you need: install the app on your repositories from [app.factory.ai/settings/organization](https://app.factory.ai/settings/organization). It requires the `id-token: write` permission so the action can request the token:
+
+  ```yaml
+  permissions:
+    contents: write
+    pull-requests: write
+    issues: write
+    id-token: write # required for GitHub App auth
+  ```
+
+- **Your own token (override).** If you'd rather use a personal access token or your own GitHub App — for example on GitHub Enterprise, or to control which account posts comments — pass it as `github_token`. When set, Droid uses it directly and skips the app. The token needs write access to pull requests and repository contents.
+
+  ```yaml
+  - uses: Factory-AI/droid-action@main
+    with:
+      factory_api_key: ${{ secrets.FACTORY_API_KEY }}
+      github_token: ${{ secrets.MY_GITHUB_TOKEN }}
+  ```
+
+> On GitLab, the same two pieces apply: set `FACTORY_API_KEY` and `GITLAB_TOKEN` as CI/CD variables. See [`docs/gitlab-setup.md`](docs/gitlab-setup.md).
+
 ## Configuration
 
 ### Core Inputs
