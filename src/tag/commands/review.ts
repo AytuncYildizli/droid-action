@@ -12,6 +12,7 @@ import { generateReviewCandidatesPrompt } from "../../create-prompt/templates/re
 import type { Octokits } from "../../github/api/client";
 import type { PrepareResult } from "../../prepare/types";
 import { resolveReviewConfig } from "../../utils/review-depth";
+import { retryWithBackoff } from "../../utils/retry";
 
 type ReviewCommandOptions = {
   context: GitHubContext;
@@ -55,17 +56,23 @@ export async function prepareReviewMode({
     `Checking out PR #${context.entityNumber} branch for diff computation...`,
   );
   try {
-    execSync("git reset --hard HEAD", { encoding: "utf8", stdio: "pipe" });
-    execSync(`gh pr checkout ${context.entityNumber}`, {
-      encoding: "utf8",
-      stdio: "pipe",
-      env: { ...process.env, GH_TOKEN: githubToken },
-    });
-    console.log(
-      `Successfully checked out PR branch: ${execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8" }).trim()}`,
+    await retryWithBackoff(
+      async () => {
+        execSync("git reset --hard HEAD", { encoding: "utf8", stdio: "pipe" });
+        execSync(`gh pr checkout ${context.entityNumber}`, {
+          encoding: "utf8",
+          stdio: "pipe",
+          env: { ...process.env, GH_TOKEN: githubToken },
+        });
+        const branchName = execSync("git rev-parse --abbrev-ref HEAD", {
+          encoding: "utf8",
+        }).trim();
+        console.log(`Successfully checked out PR branch: ${branchName}`);
+      },
+      { maxAttempts: 3, initialDelayMs: 3000, maxDelayMs: 15000 },
     );
   } catch (e) {
-    console.error(`Failed to checkout PR branch: ${e}`);
+    console.error(`Failed to checkout PR branch after retries: ${e}`);
     throw new Error(
       `Failed to checkout PR #${context.entityNumber} branch for review`,
     );

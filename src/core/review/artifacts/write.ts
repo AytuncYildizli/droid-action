@@ -1,5 +1,10 @@
 import * as fs from "fs/promises";
 import * as path from "path";
+import type {
+  ReviewArtifactContents,
+  ReviewArtifactNames,
+  ReviewArtifactPaths,
+} from "./types";
 import type { ReviewArtifactContents, ReviewArtifactPaths } from "./types";
 
 /**
