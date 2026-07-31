@@ -9,6 +9,7 @@ import { normalizeDroidArgs, parseAllowedTools } from "../../utils/parse-tools";
 import { isEntityContext } from "../../github/context";
 import type { Octokits } from "../../github/api/client";
 import type { PrepareResult } from "../../prepare/types";
+import { applyModelPolicyFallback } from "../../utils/model-policy";
 
 type FillCommandOptions = {
   context: GitHubContext;
@@ -94,9 +95,15 @@ export async function prepareFillMode({
   droidArgParts.push('--tag "droid-fill"');
 
   // Add model override if specified
-  const fillModel = process.env.FILL_MODEL?.trim();
+  const { model: fillModel, fallbackNote } = await applyModelPolicyFallback(
+    { model: process.env.FILL_MODEL?.trim() },
+    { flowLabel: "PR description fill", modelInputName: "fill_model" },
+  );
   if (fillModel) {
     droidArgParts.push(`--model "${fillModel}"`);
+  }
+  if (fallbackNote) {
+    core.setOutput("model_fallback_note", fallbackNote);
   }
 
   if (normalizedUserArgs) {

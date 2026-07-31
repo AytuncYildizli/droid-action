@@ -42,6 +42,31 @@ describe("updateCommentBody", () => {
       expect(result).toContain("**Droid encountered an error after 45s**");
     });
 
+    it("strips the review/security progress message on failure", () => {
+      const input = {
+        ...baseInput,
+        currentBody: "Droid is reviewing code and running a security check…",
+        actionFailed: true,
+        errorDetails: "Droid Exec exited with code 1",
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("**Droid encountered an error");
+      expect(result).not.toContain("Droid is reviewing code");
+      expect(result).not.toContain("running a security check");
+    });
+
+    it("strips the security-only progress message", () => {
+      const input = {
+        ...baseInput,
+        currentBody: "Droid is running a security check…",
+        executionDetails: { duration_ms: 60000 },
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).not.toContain("running a security check");
+    });
+
     it("includes error details when provided", () => {
       const input = {
         ...baseInput,
@@ -497,6 +522,87 @@ describe("updateCommentBody", () => {
       const result = updateCommentBody(input);
       const occurrences = result.split(SHIELD_URL_FRAGMENT).length - 1;
       expect(occurrences).toBe(1);
+    });
+  });
+
+  describe("model policy errors and fallback notices", () => {
+    const policyError = `403 {"detail":"This model is not available due to your organization's security settings.","status":403}`;
+
+    it("adds an actionable hint when the error is a model policy 403", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody: "Droid is working…",
+        actionFailed: true,
+        errorDetails: policyError,
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("**Droid encountered an error");
+      expect(result).toContain(policyError);
+      expect(result).toContain("`review_model`");
+      expect(result).toContain("approved by your organization");
+      expect(result).toContain("https://docs.factory.ai/models");
+    });
+
+    it("adds a hint with the models docs link for invalid-model errors", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody: "Droid is working…",
+        actionFailed: true,
+        errorDetails:
+          "Droid Exec exited with code 1:\nInvalid model: gpt-image-1",
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("not a recognized model id");
+      expect(result).toContain("`review_model`");
+      expect(result).toContain("https://docs.factory.ai/models");
+    });
+
+    it("does not add the hint for unrelated errors", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody: "Droid is working…",
+        actionFailed: true,
+        errorDetails: "500 Internal Server Error",
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("500 Internal Server Error");
+      expect(result).not.toContain("`review_model`");
+    });
+
+    it("renders a fallback notice on success", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody: "Droid is working…",
+        notice:
+          "The code review model `gpt-5.2` is not allowed by your organization's model policy, so Droid used your organization's default model instead.",
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("> [!NOTE]");
+      expect(result).toContain("`gpt-5.2`");
+    });
+
+    it("does not duplicate a stale notice on subsequent updates", () => {
+      const notice =
+        "The code review model `gpt-5.2` is not allowed by your organization's model policy, so Droid used your organization's default model instead.";
+      const firstPass = updateCommentBody({
+        ...baseInput,
+        currentBody: "Droid is working…\n\nReview summary content",
+        notice,
+      });
+
+      const secondPass = updateCommentBody({
+        ...baseInput,
+        currentBody: firstPass,
+        notice,
+      });
+
+      const occurrences = secondPass.split("> [!NOTE]").length - 1;
+      expect(occurrences).toBe(1);
+      expect(secondPass).toContain("Review summary content");
     });
   });
 });

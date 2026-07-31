@@ -85,6 +85,7 @@ runs:
         bun run ${{ github.action_path }}/../src/entrypoints/generate-review-prompt.ts
       env:
         GITHUB_TOKEN: ${{ steps.token.outputs.github_token }}
+        FACTORY_API_KEY: ${{ inputs.factory_api_key }}
         DROID_COMMENT_ID: ${{ inputs.tracking_comment_id }}
         REVIEW_DEPTH: ${{ inputs.review_depth }}
         REVIEW_MODEL: ${{ inputs.review_model }}
@@ -123,6 +124,7 @@ runs:
         bun run ${{ github.action_path }}/../src/entrypoints/prepare-validator.ts
       env:
         GITHUB_TOKEN: ${{ steps.token.outputs.github_token }}
+        FACTORY_API_KEY: ${{ inputs.factory_api_key }}
         REVIEW_VALIDATED_PATH: ${{ inputs.review_validated_path }}
         REVIEW_CANDIDATES_PATH: ${{ inputs.review_candidates_path }}
         REVIEW_DEPTH: ${{ inputs.review_depth }}
@@ -158,3 +160,6 @@ runs:
         TRIGGER_USERNAME: ${{ github.event.pull_request.user.login || github.event.sender.login || github.triggering_actor || github.actor || '' }}
         PREPARE_SUCCESS: "true"
         DROID_SUCCESS: ${{ steps.validator.outcome == 'success' }}
+        DROID_ERROR_MESSAGE: ${{ steps.review.outputs.error_message || '' }}
+        DROID_VALIDATOR_ERROR_MESSAGE: ${{ steps.validator.outputs.error_message || '' }}
+        MODEL_FALLBACK_NOTE: ${{ steps.prompt.outputs.model_fallback_note || steps.prepare_validator.outputs.model_fallback_note || steps.review.outputs.model_fallback_note || steps.validator.outputs.model_fallback_note || '' }}

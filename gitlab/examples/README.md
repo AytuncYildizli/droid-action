@@ -9,10 +9,10 @@ your-project/
     └── droid-review.yml            # self-contained droid-review config
 ```
 
-| File                          | Where it lives in your project                     | Purpose                                                                                       |
-| ----------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `factory/droid-review.yml`    | drop verbatim                                      | Self-contained config: includes the remote Component, sets inputs, wires CI/CD variables.     |
-| `.gitlab-ci.yml`              | append one `include:` line if the file exists      | Project-root entry point. Just needs to include `factory/droid-review.yml`.                   |
+| File                       | Where it lives in your project                | Purpose                                                                                   |
+| -------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `factory/droid-review.yml` | drop verbatim                                 | Self-contained config: includes the remote Component, sets inputs, wires CI/CD variables. |
+| `.gitlab-ci.yml`           | append one `include:` line if the file exists | Project-root entry point. Just needs to include `factory/droid-review.yml`.               |
 
 The two required CI/CD variables (`FACTORY_API_KEY`, `GITLAB_TOKEN`) are set
 in the GitLab UI under **Project → Settings → CI/CD → Variables** (or at

@@ -114,6 +114,12 @@ async function run() {
       actionFailed = true;
       errorDetails = prepareError;
     } else {
+      const droidErrorMessage =
+        process.env.DROID_VALIDATOR_ERROR_MESSAGE?.trim() ||
+        process.env.DROID_ERROR_MESSAGE?.trim();
+      if (process.env.DROID_SUCCESS === "false" && droidErrorMessage) {
+        errorDetails = droidErrorMessage;
+      }
       // Check for existence of output file and parse it if available
       try {
         const outputFile = process.env.OUTPUT_FILE;
@@ -159,6 +165,7 @@ async function run() {
       branchName: undefined,
       triggerUsername,
       errorDetails,
+      notice: process.env.MODEL_FALLBACK_NOTE?.trim() || undefined,
       securityReviewRan: process.env.AUTOMATIC_SECURITY_REVIEW === "true",
     };
 
