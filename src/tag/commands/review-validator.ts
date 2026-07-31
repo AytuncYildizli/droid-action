@@ -10,6 +10,7 @@ import { normalizeDroidArgs, parseAllowedTools } from "../../utils/parse-tools";
 import type { PrepareResult } from "../../prepare/types";
 import { generateReviewValidatorPrompt } from "../../create-prompt/templates/review-validator-prompt";
 import { resolveReviewConfig } from "../../utils/review-depth";
+import { applyModelPolicyFallback } from "../../utils/model-policy";
 
 export async function prepareReviewValidatorMode({
   context,
@@ -102,17 +103,24 @@ export async function prepareReviewValidatorMode({
   droidArgParts.push(`--enabled-tools "${allowedTools.join(",")}"`);
   droidArgParts.push('--tag "code-review"');
 
-  const { model, reasoningEffort } = resolveReviewConfig({
-    reviewModel: process.env.REVIEW_MODEL?.trim(),
-    reasoningEffort: process.env.REASONING_EFFORT?.trim(),
-    reviewDepth: process.env.REVIEW_DEPTH?.trim(),
-  });
+  const { model, reasoningEffort, fallbackNote } =
+    await applyModelPolicyFallback(
+      resolveReviewConfig({
+        reviewModel: process.env.REVIEW_MODEL?.trim(),
+        reasoningEffort: process.env.REASONING_EFFORT?.trim(),
+        reviewDepth: process.env.REVIEW_DEPTH?.trim(),
+      }),
+      { flowLabel: "code review", modelInputName: "review_model" },
+    );
 
   if (model) {
     droidArgParts.push(`--model "${model}"`);
   }
   if (reasoningEffort) {
     droidArgParts.push(`--reasoning-effort "${reasoningEffort}"`);
+  }
+  if (fallbackNote) {
+    core.setOutput("model_fallback_note", fallbackNote);
   }
 
   if (normalizedUserArgs) {

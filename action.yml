@@ -297,6 +297,7 @@ runs:
         bun run ${GITHUB_ACTION_PATH}/src/entrypoints/prepare-validator.ts
       env:
         GITHUB_TOKEN: ${{ steps.prepare.outputs.github_token }}
+        FACTORY_API_KEY: ${{ inputs.factory_api_key }}
         REVIEW_VALIDATED_PATH: ${{ inputs.review_validated_path }}
         REVIEW_CANDIDATES_PATH: ${{ inputs.review_candidates_path }}
         DROID_COMMENT_ID: ${{ steps.prepare.outputs.droid_comment_id }}
@@ -349,6 +350,9 @@ runs:
         TRIGGER_USERNAME: ${{ github.event.comment.user.login || github.event.issue.user.login || github.event.pull_request.user.login || github.event.sender.login || github.triggering_actor || github.actor || '' }}
         PREPARE_SUCCESS: ${{ steps.prepare.outcome == 'success' }}
         PREPARE_ERROR: ${{ steps.prepare.outputs.prepare_error || '' }}
+        DROID_ERROR_MESSAGE: ${{ steps.droid.outputs.error_message || '' }}
+        DROID_VALIDATOR_ERROR_MESSAGE: ${{ steps.droid_validator.outputs.error_message || '' }}
+        MODEL_FALLBACK_NOTE: ${{ steps.prepare.outputs.model_fallback_note || steps.prepare_validator.outputs.model_fallback_note || steps.droid.outputs.model_fallback_note || steps.droid_validator.outputs.model_fallback_note || '' }}
         USE_STICKY_COMMENT: ${{ inputs.use_sticky_comment }}
         TRACK_PROGRESS: ${{ inputs.track_progress }}
         AUTOMATIC_REVIEW: ${{ inputs.automatic_review }}

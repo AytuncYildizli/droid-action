@@ -16,6 +16,7 @@ import { generateReviewCandidatesPrompt } from "../create-prompt/templates/revie
 import { generateSecurityCandidatesPrompt } from "../create-prompt/templates/security-review-prompt";
 import { normalizeDroidArgs, parseAllowedTools } from "../utils/parse-tools";
 import { resolveReviewConfig } from "../utils/review-depth";
+import { applyModelPolicyFallback } from "../utils/model-policy";
 import { retryWithBackoff } from "../utils/retry";
 
 async function run() {
@@ -185,17 +186,29 @@ async function run() {
         ? process.env.SECURITY_MODEL?.trim() || process.env.REVIEW_MODEL?.trim()
         : process.env.REVIEW_MODEL?.trim();
 
-    const { model, reasoningEffort } = resolveReviewConfig({
-      reviewModel: rawModel,
-      reasoningEffort: process.env.REASONING_EFFORT?.trim(),
-      reviewDepth: process.env.REVIEW_DEPTH?.trim(),
-    });
+    const { model, reasoningEffort, fallbackNote } =
+      await applyModelPolicyFallback(
+        resolveReviewConfig({
+          reviewModel: rawModel,
+          reasoningEffort: process.env.REASONING_EFFORT?.trim(),
+          reviewDepth: process.env.REVIEW_DEPTH?.trim(),
+        }),
+        {
+          flowLabel:
+            reviewType === "security" ? "security review" : "code review",
+          modelInputName:
+            reviewType === "security" ? "security_model" : "review_model",
+        },
+      );
 
     if (model) {
       droidArgParts.push(`--model "${model}"`);
     }
     if (reasoningEffort) {
       droidArgParts.push(`--reasoning-effort "${reasoningEffort}"`);
+    }
+    if (fallbackNote) {
+      core.setOutput("model_fallback_note", fallbackNote);
     }
 
     if (normalizedUserArgs) {

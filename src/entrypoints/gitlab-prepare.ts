@@ -36,6 +36,7 @@ import { computeReviewArtifacts } from "../gitlab/data/review-artifacts";
 import { generateGitlabReviewCandidatesPrompt } from "../gitlab/prompts/candidates";
 import type { GitlabReviewPromptContext } from "../gitlab/prompts/types";
 import { resolveReviewConfig } from "../utils/review-depth";
+import { applyModelPolicyFallback } from "../utils/model-policy";
 import { setupDroidSettings } from "../../base-action/src/setup-droid-settings";
 
 export type PrepareState = {
@@ -246,22 +247,32 @@ async function run(): Promise<void> {
     `Artifacts written:\n  ${artifacts.diffPath}\n  ${artifacts.commentsPath}\n  ${artifacts.descriptionPath}`,
   );
 
-  const resolved = resolveReviewConfig({
-    reviewModel: context.inputs.reviewModel,
-    reasoningEffort: context.inputs.reasoningEffort,
-    reviewDepth: context.inputs.reviewDepth,
-  });
+  const resolved = await applyModelPolicyFallback(
+    resolveReviewConfig({
+      reviewModel: context.inputs.reviewModel,
+      reasoningEffort: context.inputs.reasoningEffort,
+      reviewDepth: context.inputs.reviewDepth,
+    }),
+    { flowLabel: "code review", modelInputName: "review_model" },
+  );
   console.log(
     `Resolved review config: depth=${context.inputs.reviewDepth} ` +
       `explicitModel=${context.inputs.reviewModel || "(empty)"} ` +
       `explicitEffort=${context.inputs.reasoningEffort || "(empty)"} ` +
-      `=> model=${resolved.model} effort=${resolved.reasoningEffort ?? "(none)"}`,
+      `=> model=${resolved.model ?? "(org default)"} effort=${resolved.reasoningEffort ?? "(none)"}`,
   );
+  if (resolved.fallbackNote) {
+    console.warn(resolved.fallbackNote);
+  }
 
-  await writeResolvedEnvShim(resolved.model, resolved.reasoningEffort ?? null, {
-    DROID_MR_IID: String(mrIid),
-    DROID_TRACKING_NOTE_ID: String(trackingNoteId),
-  });
+  await writeResolvedEnvShim(
+    resolved.model ?? null,
+    resolved.reasoningEffort ?? null,
+    {
+      DROID_MR_IID: String(mrIid),
+      DROID_TRACKING_NOTE_ID: String(trackingNoteId),
+    },
+  );
 
   const candidatesPath = candidatesFilePath();
   const validatedPath = validatedFilePath();
@@ -296,7 +307,7 @@ async function run(): Promise<void> {
     shouldRunReview: true,
     trackingNoteId,
     promptPath,
-    resolvedModel: resolved.model,
+    resolvedModel: resolved.model ?? null,
     resolvedReasoningEffort: resolved.reasoningEffort ?? null,
     diffPath: artifacts.diffPath,
     commentsPath: artifacts.commentsPath,

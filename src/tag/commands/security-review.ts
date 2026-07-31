@@ -11,6 +11,7 @@ import { isEntityContext } from "../../github/context";
 import { generateSecurityCandidatesPrompt } from "../../create-prompt/templates/security-review-prompt";
 import type { Octokits } from "../../github/api/client";
 import type { PrepareResult } from "../../prepare/types";
+import { applyModelPolicyFallback } from "../../utils/model-policy";
 
 type SecurityReviewCommandOptions = {
   context: GitHubContext;
@@ -150,10 +151,18 @@ export async function prepareSecurityReviewMode({
   droidArgParts.push(`--enabled-tools "${allowedTools.join(",")}"`);
   droidArgParts.push('--tag "code-review"');
 
-  const securityModel =
-    process.env.SECURITY_MODEL?.trim() || process.env.REVIEW_MODEL?.trim();
+  const { model: securityModel, fallbackNote } = await applyModelPolicyFallback(
+    {
+      model:
+        process.env.SECURITY_MODEL?.trim() || process.env.REVIEW_MODEL?.trim(),
+    },
+    { flowLabel: "security review", modelInputName: "security_model" },
+  );
   if (securityModel) {
     droidArgParts.push(`--model "${securityModel}"`);
+  }
+  if (fallbackNote) {
+    core.setOutput("model_fallback_note", fallbackNote);
   }
 
   if (normalizedUserArgs) {
