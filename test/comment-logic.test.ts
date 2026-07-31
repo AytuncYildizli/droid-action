@@ -540,7 +540,23 @@ describe("updateCommentBody", () => {
       expect(result).toContain("**Droid encountered an error");
       expect(result).toContain(policyError);
       expect(result).toContain("`review_model`");
-      expect(result).toContain("model approved by your organization");
+      expect(result).toContain("approved by your organization");
+      expect(result).toContain("https://docs.factory.ai/models");
+    });
+
+    it("adds a hint with the models docs link for invalid-model errors", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody: "Droid is working…",
+        actionFailed: true,
+        errorDetails:
+          "Droid Exec exited with code 1:\nInvalid model: gpt-image-1",
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("not a recognized model id");
+      expect(result).toContain("`review_model`");
+      expect(result).toContain("https://docs.factory.ai/models");
     });
 
     it("does not add the hint for unrelated errors", () => {

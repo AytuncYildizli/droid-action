@@ -4,7 +4,12 @@ import { promisify } from "util";
 import { stat } from "fs/promises";
 import { parse as parseShellArgs } from "shell-quote";
 import { retryWithBackoff } from "./utils/retry";
-import { isModelPolicyError, stripModelArgs } from "./utils/model-policy-error";
+import {
+  condenseInvalidModelError,
+  isInvalidModelError,
+  isModelPolicyError,
+  stripModelArgs,
+} from "./utils/model-policy-error";
 
 const execAsync = promisify(exec);
 
@@ -377,26 +382,36 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
         lastExitCode = await runDroidOnce();
         if (lastExitCode !== 0) {
           console.log(`Droid Exec exited with code ${lastExitCode}`);
-          // If the failure was caused by the org's model policy rejecting
-          // the requested model, retry without --model so droid exec falls
-          // back to the organization's default model.
+          // If the failure was caused by the requested model being rejected
+          // (blocked by the org's model policy, or not a recognized model
+          // id), retry without --model so droid exec falls back to the
+          // organization's default model.
           const resultEvent = getLastResultEvent();
+          const policyBlocked =
+            resultEvent?.is_error === true &&
+            isModelPolicyError(resultEvent.result);
+          const invalidModel = isInvalidModelError(getStderrTail());
           if (
             !modelArgsStripped &&
-            resultEvent?.is_error &&
-            isModelPolicyError(resultEvent.result) &&
+            (policyBlocked || invalidModel) &&
             currentDroidArgs.some(
               (arg) => arg === "--model" || arg.startsWith("--model="),
             )
           ) {
             modelArgsStripped = true;
             currentDroidArgs = stripModelArgs(currentDroidArgs);
+            const reason = policyBlocked
+              ? "is not allowed by your organization's model policy"
+              : "is not a recognized model id";
             console.warn(
-              "The requested model is not allowed by the organization's model policy; retrying with the organization's default model",
+              `The requested model ${reason}; retrying with the organization's default model`,
             );
             core.setOutput(
               "model_fallback_note",
-              "The requested model is not allowed by your organization's model policy, so Droid retried with your organization's default model. Set the model input (e.g. `review_model`) to an approved model to control which model is used.",
+              `The requested model ${reason}, so Droid retried with your organization's default model. ` +
+                "Set the model input (e.g. `review_model`) to an " +
+                "[available model](https://docs.factory.ai/models) approved " +
+                "by your organization to control which model is used.",
             );
           }
           throw new Error(`Droid Exec exited with code ${lastExitCode}`);
@@ -412,7 +427,10 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
       `Droid Exec failed after 3 total attempts (exit code: ${lastExitCode})`,
     );
     const finalResultEvent = getLastResultEvent();
-    const finalStderrTail = getStderrTail().trim();
+    let finalStderrTail = getStderrTail().trim();
+    if (isInvalidModelError(finalStderrTail)) {
+      finalStderrTail = condenseInvalidModelError(finalStderrTail);
+    }
     const rawErrorMessage =
       finalResultEvent?.is_error && finalResultEvent.result?.trim()
         ? finalResultEvent.result.trim()

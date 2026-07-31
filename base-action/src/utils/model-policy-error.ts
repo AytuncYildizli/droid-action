@@ -17,6 +17,39 @@ export function isModelPolicyError(text: string | undefined | null): boolean {
 }
 
 /**
+ * Matches the fast client-side failure droid exec prints to stderr when the
+ * --model value is not a recognized model id.
+ */
+export function isInvalidModelError(text: string | undefined | null): boolean {
+  if (!text) {
+    return false;
+  }
+  return /Invalid model:/i.test(text);
+}
+
+/**
+ * An invalid --model value makes droid exec dump the full list of available
+ * models (twice, with one line per dump that is hundreds of characters
+ * wide). Condense that output down to the meaningful lines so it can be
+ * embedded in a PR comment without sideways scrolling.
+ */
+export function condenseInvalidModelError(text: string): string {
+  const kept: string[] = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    if (/^Available built-in models:$/i.test(trimmed)) continue;
+    if (/^No custom models configured/i.test(trimmed)) continue;
+    // Drop raw model-list dumps (long comma-separated lines)
+    if (trimmed.split(", ").length >= 5) continue;
+    if (kept[kept.length - 1] === trimmed) continue;
+    kept.push(trimmed);
+  }
+  const condensed = kept.join("\n");
+  return condensed || text;
+}
+
+/**
  * Remove `--model <value>` and `--reasoning-effort <value>` (including
  * `--flag=value` forms) from an argv array so droid exec falls back to the
  * organization's default model.

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
+  condenseInvalidModelError,
+  isInvalidModelError,
   isModelPolicyError,
   stripModelArgs,
 } from "../src/utils/model-policy-error";
@@ -32,6 +34,41 @@ describe("isModelPolicyError", () => {
   it("does not match unrelated errors", () => {
     expect(isModelPolicyError("429 Too Many Requests")).toBe(false);
     expect(isModelPolicyError(undefined)).toBe(false);
+  });
+});
+
+describe("isInvalidModelError", () => {
+  it("matches the CLI invalid-model stderr output", () => {
+    expect(isInvalidModelError("Invalid model: gpt-image-1")).toBe(true);
+  });
+
+  it("does not match unrelated output", () => {
+    expect(isInvalidModelError("500 Internal Server Error")).toBe(false);
+    expect(isInvalidModelError(undefined)).toBe(false);
+  });
+});
+
+describe("condenseInvalidModelError", () => {
+  it("drops the model-list dump and dedupes repeated lines", () => {
+    const dump = [
+      "claude-opus-5, claude-sonnet-5, gpt-5.4, gpt-5.2, kimi-k3, glm-5.2",
+      "",
+      "No custom models configured. Add them to ~/.factory/settings.json",
+      "Invalid model: gpt-image-1",
+      "",
+      "Available built-in models:",
+      "  auto, claude-opus-5, claude-sonnet-5, gpt-5.4, gpt-5.2, kimi-k3",
+      "",
+      "No custom models configured. Add them to ~/.factory/settings.json",
+      "Invalid model: gpt-image-1",
+    ].join("\n");
+
+    expect(condenseInvalidModelError(dump)).toBe("Invalid model: gpt-image-1");
+  });
+
+  it("returns the original text when nothing would remain", () => {
+    const listOnly = "a, b, c, d, e, f";
+    expect(condenseInvalidModelError(listOnly)).toBe(listOnly);
   });
 });
 

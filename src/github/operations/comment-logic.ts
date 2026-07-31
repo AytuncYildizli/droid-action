@@ -21,13 +21,22 @@ export type CommentUpdateInput = {
 };
 
 const MODEL_POLICY_ERROR_PATTERN =
-  /not available due to your organization['’]s security settings/i;
+  /not available due to your organization['’]s security settings|requires explicit organization opt-in/i;
+
+const INVALID_MODEL_ERROR_PATTERN = /Invalid model:/i;
 
 const MODEL_POLICY_HINT =
   "> [!TIP]\n" +
   "> The selected model is not allowed by your organization's model policy. " +
-  "Set the `review_model` input (or `security_model` / `fill_model`) to a " +
-  "model approved by your organization.";
+  "Set the `review_model` input (or `security_model` / `fill_model`) to an " +
+  "[available model](https://docs.factory.ai/models) approved by your " +
+  "organization.";
+
+const INVALID_MODEL_HINT =
+  "> [!TIP]\n" +
+  "> The selected model is not a recognized model id. Set the " +
+  "`review_model` input (or `security_model` / `fill_model`) to an " +
+  "[available model](https://docs.factory.ai/models).";
 
 export const SECURITY_REVIEW_BADGE =
   "![Security Review](https://img.shields.io/badge/security%20review-ran-blue)";
@@ -218,6 +227,8 @@ export function updateCommentBody(input: CommentUpdateInput): string {
     newBody += `\n\n\`\`\`\n${errorDetails}\n\`\`\``;
     if (MODEL_POLICY_ERROR_PATTERN.test(errorDetails)) {
       newBody += `\n\n${MODEL_POLICY_HINT}`;
+    } else if (INVALID_MODEL_ERROR_PATTERN.test(errorDetails)) {
+      newBody += `\n\n${INVALID_MODEL_HINT}`;
     }
   }
 
