@@ -42,6 +42,31 @@ describe("updateCommentBody", () => {
       expect(result).toContain("**Droid encountered an error after 45s**");
     });
 
+    it("strips the review/security progress message on failure", () => {
+      const input = {
+        ...baseInput,
+        currentBody: "Droid is reviewing code and running a security check…",
+        actionFailed: true,
+        errorDetails: "Droid Exec exited with code 1",
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("**Droid encountered an error");
+      expect(result).not.toContain("Droid is reviewing code");
+      expect(result).not.toContain("running a security check");
+    });
+
+    it("strips the security-only progress message", () => {
+      const input = {
+        ...baseInput,
+        currentBody: "Droid is running a security check…",
+        executionDetails: { duration_ms: 60000 },
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).not.toContain("running a security check");
+    });
+
     it("includes error details when provided", () => {
       const input = {
         ...baseInput,

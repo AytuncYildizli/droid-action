@@ -96,8 +96,11 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   } = input;
 
   // Extract content from the original comment body
-  // First, remove the "Droid is working…" message (and support legacy wording)
-  const workingPattern = /Droid is working[…\.]{1,3}(?:\s*<img[^>]*>)?/i;
+  // First, remove the in-progress message (and support legacy wording),
+  // including the automatic review/security variants, so a failed run does
+  // not keep saying "Droid is reviewing code…" under the error header.
+  const workingPattern =
+    /Droid is (?:working|reviewing code and running a security check|reviewing code|running a security check)[…\.]{1,3}(?:\s*<img[^>]*>)?/i;
   let bodyContent = originalBody.replace(workingPattern, "").trim();
 
   // Remove initial placeholder follow-up text when present
