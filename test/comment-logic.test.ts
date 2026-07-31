@@ -499,4 +499,69 @@ describe("updateCommentBody", () => {
       expect(occurrences).toBe(1);
     });
   });
+
+  describe("model policy errors and fallback notices", () => {
+    const policyError = `403 {"detail":"This model is not available due to your organization's security settings.","status":403}`;
+
+    it("adds an actionable hint when the error is a model policy 403", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody: "Droid is working…",
+        actionFailed: true,
+        errorDetails: policyError,
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("**Droid encountered an error");
+      expect(result).toContain(policyError);
+      expect(result).toContain("`review_model`");
+      expect(result).toContain("model approved by your organization");
+    });
+
+    it("does not add the hint for unrelated errors", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody: "Droid is working…",
+        actionFailed: true,
+        errorDetails: "500 Internal Server Error",
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("500 Internal Server Error");
+      expect(result).not.toContain("`review_model`");
+    });
+
+    it("renders a fallback notice on success", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody: "Droid is working…",
+        notice:
+          "The code review model `gpt-5.2` is not allowed by your organization's model policy, so Droid used your organization's default model instead.",
+      };
+
+      const result = updateCommentBody(input);
+      expect(result).toContain("> [!NOTE]");
+      expect(result).toContain("`gpt-5.2`");
+    });
+
+    it("does not duplicate a stale notice on subsequent updates", () => {
+      const notice =
+        "The code review model `gpt-5.2` is not allowed by your organization's model policy, so Droid used your organization's default model instead.";
+      const firstPass = updateCommentBody({
+        ...baseInput,
+        currentBody: "Droid is working…\n\nReview summary content",
+        notice,
+      });
+
+      const secondPass = updateCommentBody({
+        ...baseInput,
+        currentBody: firstPass,
+        notice,
+      });
+
+      const occurrences = secondPass.split("> [!NOTE]").length - 1;
+      expect(occurrences).toBe(1);
+      expect(secondPass).toContain("Review summary content");
+    });
+  });
 });

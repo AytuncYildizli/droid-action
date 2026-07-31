@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { stat } from "fs/promises";
 import { parse as parseShellArgs } from "shell-quote";
 import { retryWithBackoff } from "./utils/retry";
+import { isModelPolicyError, stripModelArgs } from "./utils/model-policy-error";
 
 const execAsync = promisify(exec);
 
@@ -256,14 +257,39 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
   // retryWithBackoff so backoff timing lives in one place (3 total attempts,
   // 5s then 10s delays).
   let lastExitCode = 1;
+  let currentDroidArgs = config.droidArgs;
+  let modelArgsStripped = false;
+  type ResultEvent = { is_error?: boolean; result?: string };
+  let lastResultEvent: ResultEvent | null = null;
+  // Fast client-side failures (e.g. an invalid --model value) print to
+  // stderr and exit before any stream-json result event is emitted, so keep
+  // a bounded tail of stderr as an error-message fallback.
+  const STDERR_TAIL_LIMIT = 1500;
+  let stderrTail = "";
+  // Indirection defeats TS control-flow narrowing: the variables are only
+  // assigned inside stream handler closures, so direct reads after the
+  // retry loop would otherwise be narrowed to their initial values.
+  const getLastResultEvent = (): ResultEvent | null => lastResultEvent;
+  const getStderrTail = (): string => stderrTail;
 
   const runDroidOnce = (): Promise<number> => {
-    const droidProcess = spawn(droidExecutable, config.droidArgs, {
-      stdio: ["ignore", "pipe", "inherit"],
+    stderrTail = "";
+    const droidProcess = spawn(droidExecutable, currentDroidArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
         ...config.env,
       },
+    });
+
+    droidProcess.stderr.on("data", (data) => {
+      const text = data.toString();
+      process.stderr.write(text);
+      stderrTail = (stderrTail + text).slice(-STDERR_TAIL_LIMIT);
+    });
+
+    droidProcess.stderr.on("error", (error) => {
+      console.error("Error reading Droid stderr:", error);
     });
 
     // Handle Droid process errors
@@ -293,6 +319,17 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
               sessionId = detectedSessionId;
               console.log(`Detected Droid session: ${sessionId}`);
             }
+          }
+          if (
+            typeof parsed === "object" &&
+            parsed !== null &&
+            parsed.type === "result"
+          ) {
+            lastResultEvent = {
+              is_error: parsed.is_error === true,
+              result:
+                typeof parsed.result === "string" ? parsed.result : undefined,
+            };
           }
           const sanitizedOutput = sanitizeJsonOutput(parsed, showFullOutput);
 
@@ -340,6 +377,28 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
         lastExitCode = await runDroidOnce();
         if (lastExitCode !== 0) {
           console.log(`Droid Exec exited with code ${lastExitCode}`);
+          // If the failure was caused by the org's model policy rejecting
+          // the requested model, retry without --model so droid exec falls
+          // back to the organization's default model.
+          const resultEvent = getLastResultEvent();
+          if (
+            !modelArgsStripped &&
+            resultEvent?.is_error &&
+            isModelPolicyError(resultEvent.result) &&
+            currentDroidArgs.some(
+              (arg) => arg === "--model" || arg.startsWith("--model="),
+            )
+          ) {
+            modelArgsStripped = true;
+            currentDroidArgs = stripModelArgs(currentDroidArgs);
+            console.warn(
+              "The requested model is not allowed by the organization's model policy; retrying with the organization's default model",
+            );
+            core.setOutput(
+              "model_fallback_note",
+              "The requested model is not allowed by your organization's model policy, so Droid retried with your organization's default model. Set the model input (e.g. `review_model`) to an approved model to control which model is used.",
+            );
+          }
           throw new Error(`Droid Exec exited with code ${lastExitCode}`);
         }
       },
@@ -352,6 +411,20 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
     console.error(
       `Droid Exec failed after 3 total attempts (exit code: ${lastExitCode})`,
     );
+    const finalResultEvent = getLastResultEvent();
+    const finalStderrTail = getStderrTail().trim();
+    const rawErrorMessage =
+      finalResultEvent?.is_error && finalResultEvent.result?.trim()
+        ? finalResultEvent.result.trim()
+        : finalStderrTail
+          ? `Droid Exec exited with code ${lastExitCode}:\n${finalStderrTail}`
+          : `Droid Exec exited with code ${lastExitCode}`;
+    const errorMessage =
+      rawErrorMessage.length > 2000
+        ? `${rawErrorMessage.slice(0, 2000)}…`
+        : rawErrorMessage;
+    console.error(`Droid Exec failed: ${errorMessage}`);
+    core.setOutput("error_message", errorMessage);
     core.setOutput("conclusion", "failure");
     process.exit(lastExitCode);
   }

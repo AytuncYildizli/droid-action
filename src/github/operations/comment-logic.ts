@@ -16,8 +16,18 @@ export type CommentUpdateInput = {
   branchName?: string;
   triggerUsername?: string;
   errorDetails?: string;
+  notice?: string;
   securityReviewRan?: boolean;
 };
+
+const MODEL_POLICY_ERROR_PATTERN =
+  /not available due to your organization['’]s security settings/i;
+
+const MODEL_POLICY_HINT =
+  "> [!TIP]\n" +
+  "> The selected model is not allowed by your organization's model policy. " +
+  "Set the `review_model` input (or `security_model` / `fill_model`) to a " +
+  "model approved by your organization.";
 
 export const SECURITY_REVIEW_BADGE =
   "![Security Review](https://img.shields.io/badge/security%20review-ran-blue)";
@@ -81,6 +91,7 @@ export function updateCommentBody(input: CommentUpdateInput): string {
     branchName,
     triggerUsername,
     errorDetails,
+    notice,
     securityReviewRan,
   } = input;
 
@@ -202,6 +213,14 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // Add error details if available
   if (actionFailed && errorDetails) {
     newBody += `\n\n\`\`\`\n${errorDetails}\n\`\`\``;
+    if (MODEL_POLICY_ERROR_PATTERN.test(errorDetails)) {
+      newBody += `\n\n${MODEL_POLICY_HINT}`;
+    }
+  }
+
+  // Surface model fallback notices (e.g. review model blocked by org policy)
+  if (notice) {
+    newBody += `\n\n> [!NOTE]\n> ${notice}`;
   }
 
   newBody += `\n\n---\n`;
@@ -210,6 +229,13 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // Remove any existing View job run, branch links from the bottom
   bodyContent = bodyContent.replace(/\n?\[View job run\]\([^\)]+\)/g, "");
   bodyContent = bodyContent.replace(/\n?\[View branch\]\([^\)]+\)/g, "");
+
+  // Remove stale model-policy notices from previous runs
+  bodyContent = bodyContent
+    .replace(/^> \[!(?:NOTE|TIP)\]\r?\n(?:^>.*(?:\r?\n)?)+/gim, (block) =>
+      /model policy/i.test(block) ? "" : block,
+    )
+    .trim();
 
   // Remove any existing duration info at the bottom
   bodyContent = bodyContent.replace(/\n*---\n*Duration: [0-9]+m? [0-9]+s/g, "");
