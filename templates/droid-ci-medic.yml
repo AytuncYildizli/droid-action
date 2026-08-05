@@ -1,0 +1,51 @@
+name: CI Medic
+
+on:
+  workflow_run:
+    workflows: ["CI", "Tests"]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ci-medic-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  ci-medic:
+    if: >
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the head branch (not the merge commit) so CI Medic can
+      # reproduce failures and, when auto_fix is on, commit to a real branch.
+      - name: Checkout pull request branch
+        id: checkout_branch
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      # Fork branches do not exist in the base repository. Fall back to a
+      # detached checkout so diagnosis still works; CI Medic downgrades to
+      # comment-only because it cannot push to a fork.
+      - name: Checkout pull request commit
+        if: steps.checkout_branch.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Run CI Medic
+        uses: Factory-AI/droid-action@v1
+        with:
+          factory_api_key: ${{ secrets.FACTORY_API_KEY }}
+          ci_medic: "true"
+          auto_fix: "false"
+          retry_mode: smart
+          github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -121,8 +121,10 @@ export async function prepareMcpTools(
     }
 
     const hasWorkflowToken = !!process.env.DEFAULT_WORKFLOW_TOKEN;
+    const medicPrNumber = process.env.MEDIC_PR_NUMBER;
     const shouldIncludeCIServer =
-      isEntityContext(context) && context.isPR && hasWorkflowToken;
+      ((isEntityContext(context) && context.isPR) || Boolean(medicPrNumber)) &&
+      hasWorkflowToken;
 
     if (shouldIncludeCIServer) {
       // Verify the token actually has actions:read permission
@@ -147,7 +149,12 @@ export async function prepareMcpTools(
           GITHUB_TOKEN: process.env.DEFAULT_WORKFLOW_TOKEN,
           REPO_OWNER: owner,
           REPO_NAME: repo,
-          PR_NUMBER: context.entityNumber?.toString() || "",
+          PR_NUMBER:
+            (isEntityContext(context)
+              ? context.entityNumber?.toString()
+              : "") ||
+            medicPrNumber ||
+            "",
           RUNNER_TEMP: process.env.RUNNER_TEMP || "/tmp",
         },
       };

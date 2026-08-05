@@ -9,6 +9,24 @@ This GitHub Action powers the Factory **Droid** app. It watches your pull reques
 
 Everything runs inside GitHub Actions using your Factory API key, so the bot never leaves your repository and operates with the permissions you grant.
 
+## CI Medic
+
+CI Medic runs after configured workflows complete. It waits for all checks on
+the commit, summarizes failed job logs, retries flaky or infrastructure
+failures, and either commits a focused fix or posts inline suggestions.
+
+Copy `templates/droid-ci-medic.yml` to `.github/workflows/ci-medic.yml` and
+replace the workflow names with the checks you want to monitor. Enable direct
+fixes with `auto_fix: "true"` only when the workflow has `contents: write`.
+
+The optional `.github/droid-ci.yml` file can configure `retry`, `fix`,
+`workflows.exclude`, `skip`, `instructions`, and the lifetime
+`max_runs_per_pr` budget. The budgets have distinct scopes:
+
+- `max_retries` limits reruns of one failed job for one commit.
+- `max_fix_attempts` limits consecutive fix commits from CI Medic.
+- `max_runs_per_pr` limits all CI Medic invocations over the PR lifetime.
+
 ## What Happens When You Tag `@droid`
 
 1. **Trigger detection** – The action scans issue comments, PR descriptions, and review comments for `@droid` commands.

@@ -27,6 +27,15 @@ const defaultInputs = {
   securityNotifyTeam: "",
   securityScanSchedule: false,
   securityScanDays: 7,
+  ciMedic: false,
+  autoFix: false,
+  retryMode: "smart" as const,
+  maxRetries: 1,
+  maxFixAttempts: 2,
+  maxRunsPerPr: 10,
+  medicModel: "",
+  instructions: "",
+  configPath: ".github/droid-ci.yml",
 };
 
 const defaultRepository = {

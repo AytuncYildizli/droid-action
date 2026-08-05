@@ -98,6 +98,15 @@ type BaseContext = {
     securityNotifyTeam: string;
     securityScanSchedule: boolean;
     securityScanDays: number;
+    ciMedic?: boolean;
+    autoFix?: boolean;
+    retryMode?: "off" | "always" | "smart";
+    maxRetries?: number;
+    maxFixAttempts?: number;
+    maxRunsPerPr?: number;
+    medicModel?: string;
+    instructions?: string;
+    configPath?: string;
   };
 };
 
@@ -161,6 +170,24 @@ export function parseGitHubContext(): GitHubContext {
         1,
         parseInt(process.env.SECURITY_SCAN_DAYS ?? "7", 10) || 7,
       ),
+      ciMedic: process.env.CI_MEDIC === "true",
+      autoFix: process.env.AUTO_FIX === "true",
+      retryMode: parseRetryMode(process.env.RETRY_MODE),
+      maxRetries: Math.max(
+        0,
+        parseInt(process.env.MAX_RETRIES ?? "1", 10) || 1,
+      ),
+      maxFixAttempts: Math.max(
+        0,
+        parseInt(process.env.MAX_FIX_ATTEMPTS ?? "2", 10) || 2,
+      ),
+      maxRunsPerPr: Math.max(
+        1,
+        parseInt(process.env.MAX_RUNS_PER_PR ?? "10", 10) || 10,
+      ),
+      medicModel: process.env.MEDIC_MODEL ?? "",
+      instructions: process.env.INSTRUCTIONS ?? "",
+      configPath: process.env.CONFIG_PATH ?? ".github/droid-ci.yml",
     },
   };
 
@@ -247,6 +274,10 @@ export function parseGitHubContext(): GitHubContext {
     default:
       throw new Error(`Unsupported event type: ${context.eventName}`);
   }
+}
+
+function parseRetryMode(value: string | undefined): "off" | "always" | "smart" {
+  return value === "off" || value === "always" ? value : "smart";
 }
 
 export function isIssuesEvent(
