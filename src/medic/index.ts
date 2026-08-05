@@ -62,9 +62,20 @@ export function findTrackingComment<T extends MedicComment>(
   );
 }
 
+// The commit is recorded alongside the count so a second workflow failing on
+// the same commit is recognised as a duplicate instead of paying for another
+// analysis of information the first run already had.
+const MEDIC_MARKER_PATTERN =
+  /<!-- ci-medic:run=\d+ count=(\d+)(?: sha=([0-9a-f]{7,40}))? -->/;
+
 export function medicRunCount(comments: MedicComment[]): number {
   const body = findTrackingComment(comments)?.body ?? "";
-  return Number(body.match(/<!-- ci-medic:run=\S+ count=(\d+) -->/)?.[1] ?? 0);
+  return Number(body.match(MEDIC_MARKER_PATTERN)?.[1] ?? 0);
+}
+
+export function medicRunSha(comments: MedicComment[]): string | undefined {
+  const body = findTrackingComment(comments)?.body ?? "";
+  return body.match(MEDIC_MARKER_PATTERN)?.[2];
 }
 
 export function medicAllowedTools(fixEnabled: boolean): string[] {
@@ -194,6 +205,19 @@ export async function prepareMedicMode(
   // comment it is given and would otherwise erase each run's own record.
   const trackingComment = findTrackingComment(comments);
   const medicRuns = medicRunCount(comments);
+
+  // Each watched workflow that fails raises its own workflow_run event, and
+  // the first run already waits for every check on the commit before it
+  // reports, so the later ones re-analyze identical information and used to
+  // spend a budget unit each. A rerun that fails is a genuinely new outcome,
+  // so an attempt above the first is still allowed through.
+  if (
+    medicRunSha(comments) === pr.headSha &&
+    Number(run.run_attempt ?? 1) <= 1
+  ) {
+    return skippedResult("commit_already_processed");
+  }
+
   if (medicRuns >= config.max_runs_per_pr) {
     const alreadyAnnounced = comments.some(
       (comment) =>
@@ -218,7 +242,7 @@ export async function prepareMedicMode(
     run.id,
   );
 
-  const runMarker = `${MEDIC_RUN_MARKER_PREFIX}${context.runId} count=${medicRuns + 1} -->`;
+  const runMarker = `${MEDIC_RUN_MARKER_PREFIX}${context.runId} count=${medicRuns + 1} sha=${pr.headSha} -->`;
   const trackingBody = `## CI Medic\n\nCI Medic is analyzing the completed workflow run [${run.name}](${run.html_url}) and the other checks for this commit.\n\n${runMarker}`;
   const comment = trackingComment
     ? await octokit.rest.issues.updateComment({
@@ -246,6 +270,7 @@ export async function prepareMedicMode(
   core.exportVariable("MEDIC_RUN_MARKER", runMarker);
   core.exportVariable("MEDIC_RUN_ID", context.runId.toString());
   core.exportVariable("MEDIC_RUN_COUNT", (medicRuns + 1).toString());
+  core.exportVariable("MEDIC_RUN_SHA", pr.headSha);
   // Consumed by the post-run guard that reverts edits to protected paths.
   core.exportVariable("MEDIC_BASE_SHA", pr.headSha);
   core.exportVariable(

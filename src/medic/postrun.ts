@@ -42,18 +42,35 @@ export function protectedViolations(
   return changedFiles.filter((file) => matchesProtectedPath(patterns, file));
 }
 
-async function revertProtectedPaths(
+export async function changedFilesSince(
+  baseSha: string,
+  cwd?: string,
+): Promise<string[]> {
+  const command = $`git diff --name-only ${baseSha} HEAD`.nothrow();
+  const output = await (cwd ? command.cwd(cwd) : command).text();
+  return output
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+// Reverting is separated from pushing so the restore can be exercised against
+// a real repository in tests without a remote.
+export async function revertProtectedPaths(
   baseSha: string,
   violations: string[],
+  cwd?: string,
 ): Promise<void> {
+  const at = (command: any) => (cwd ? command.cwd(cwd) : command);
   // Only the offending paths are restored, so a legitimate fix made in the
-  // same run survives, then the corrected state is pushed.
+  // same run survives.
   for (const file of violations) {
-    await $`git checkout ${baseSha} -- ${file}`.nothrow();
+    await at($`git checkout ${baseSha} -- ${file}`.nothrow());
   }
-  await $`git add -- ${violations}`.nothrow();
-  await $`git -c user.name=droid -c user.email=droid@factory.ai commit -m ${"revert(ci): restore protected paths modified by CI Medic"}`.nothrow();
-  await $`git push`.nothrow();
+  await at($`git add -- ${violations}`.nothrow());
+  await at(
+    $`git -c user.name=droid -c user.email=droid@factory.ai commit -m ${"revert(ci): restore protected paths modified by CI Medic"}`.nothrow(),
+  );
 }
 
 async function updateTrackingComment(body: string): Promise<void> {
@@ -86,13 +103,10 @@ async function main() {
 
   let violations: string[] = [];
   if (baseSha && patterns.length > 0) {
-    const changed = (
-      await $`git diff --name-only ${baseSha} HEAD`.nothrow().text()
-    )
-      .split("\n")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-    violations = protectedViolations(patterns, changed);
+    violations = protectedViolations(
+      patterns,
+      await changedFilesSince(baseSha),
+    );
   }
 
   if (violations.length > 0) {
@@ -100,6 +114,7 @@ async function main() {
       `CI Medic modified protected paths; reverting:\n${violations.map((file) => `  - ${file}`).join("\n")}`,
     );
     await revertProtectedPaths(baseSha, violations);
+    await $`git push`.nothrow();
     await updateTrackingComment(
       `## CI Medic\n\nThis run tried to modify protected paths and the changes were reverted:\n\n${violations.map((file) => `- \`${file}\``).join("\n")}\n\nA human should review [the run](${runUrl}).`,
     );

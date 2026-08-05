@@ -12,6 +12,7 @@ import {
   MEDIC_ALLOWED_TOOLS,
   medicAllowedTools,
   medicRunCount,
+  medicRunSha,
 } from "../src/medic/index";
 import { protectedViolations } from "../src/medic/postrun";
 
@@ -217,6 +218,20 @@ describe("CI Medic run budget", () => {
         { body: markerFor(4), user: bot },
       ]),
     ).toBe(4);
+  });
+
+  // Each watched workflow that fails raises its own event for one commit, and
+  // every one of them used to pay for a full analysis of the same information.
+  test("records the analyzed commit alongside the count", () => {
+    const body = `## CI Medic\n\ndiagnosis\n\n<!-- ci-medic:run=99 count=2 sha=abc1234def -->`;
+    expect(medicRunCount([{ body, user: bot }])).toBe(2);
+    expect(medicRunSha([{ body, user: bot }])).toBe("abc1234def");
+  });
+
+  test("reads a marker written before commits were recorded", () => {
+    const legacy = [{ body: markerFor(3), user: bot }];
+    expect(medicRunCount(legacy)).toBe(3);
+    expect(medicRunSha(legacy)).toBeUndefined();
   });
 
   test("ignores a human marker even when no genuine marker exists", () => {

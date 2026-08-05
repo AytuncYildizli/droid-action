@@ -66,12 +66,14 @@ server.tool(
       // strips HTML comments, so it is always re-appended afterwards.
       const medicRunId = process.env.MEDIC_RUN_ID ?? "";
       const medicRunCount = process.env.MEDIC_RUN_COUNT ?? "";
+      const medicRunSha = process.env.MEDIC_RUN_SHA ?? "";
       if (
         !isPullRequestReviewComment &&
         /^\d+$/.test(medicRunId) &&
-        /^\d+$/.test(medicRunCount)
+        /^\d+$/.test(medicRunCount) &&
+        /^[0-9a-f]{7,40}$/.test(medicRunSha)
       ) {
-        sanitizedBody = `${sanitizedBody}\n\n<!-- ci-medic:run=${medicRunId} count=${medicRunCount} -->`;
+        sanitizedBody = `${sanitizedBody}\n\n<!-- ci-medic:run=${medicRunId} count=${medicRunCount} sha=${medicRunSha} -->`;
       }
 
       const result = await updateDroidComment(octokit, {
