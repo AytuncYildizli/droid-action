@@ -241,11 +241,12 @@ ${bunSetup}
       - run: bash ci/infra.sh
 `;
 
-// Passes a flag bun test does not accept, so the only possible repair lives in
-// the workflow file itself, which fix.protected_paths forbids touching.
+// Misspells the script name so the job genuinely fails and the only possible
+// repair lives in the workflow file, which fix.protected_paths forbids
+// touching. An unknown *flag* does not work here: bun ignores it and passes.
 const CI_WORKFLOW_BAD_FLAG = CI_WORKFLOW.replace(
   "      - run: bun test\n",
-  "      - run: bun test --totally-not-a-real-flag\n",
+  "      - run: bun tst\n",
 );
 
 const INTEGRATION_WORKFLOW = `name: Integration
