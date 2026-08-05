@@ -315,7 +315,7 @@ permissions:
 
 concurrency:
   group: ci-medic-\${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ci-medic:

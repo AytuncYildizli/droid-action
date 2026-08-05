@@ -238,10 +238,14 @@ export async function prepareMedicMode(
   core.setOutput("run_code_review", "false");
   core.exportVariable("MEDIC_PR_NUMBER", pr.number.toString());
   core.exportVariable("DROID_EXEC_RUN_TYPE", "ci-medic");
-  // The comment server appends this verbatim instead of re-reading the
-  // comment, so a transient read failure can no longer drop the marker and
-  // reset the pull request's lifetime count.
+  // The comment server rebuilds the marker from these instead of re-reading
+  // the comment, so a transient read failure can no longer drop it and reset
+  // the pull request's lifetime count. They are passed as two digit-only
+  // values because MCP server env vars are interpolated into a shell command
+  // unquoted, and the assembled marker contains spaces and angle brackets.
   core.exportVariable("MEDIC_RUN_MARKER", runMarker);
+  core.exportVariable("MEDIC_RUN_ID", context.runId.toString());
+  core.exportVariable("MEDIC_RUN_COUNT", (medicRuns + 1).toString());
   // Consumed by the post-run guard that reverts edits to protected paths.
   core.exportVariable("MEDIC_BASE_SHA", pr.headSha);
   core.exportVariable(

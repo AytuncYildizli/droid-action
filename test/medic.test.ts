@@ -126,6 +126,37 @@ describe("CI Medic MCP wiring", () => {
     }
   });
 
+  // MCP server env values are interpolated into `droid mcp add ... --env K=V`
+  // as an unquoted shell string, so a value holding a space or a shell
+  // metacharacter breaks registration and aborts the whole run.
+  test("keeps every MCP env value safe for an unquoted shell argument", async () => {
+    process.env.MEDIC_PR_NUMBER = "42";
+    process.env.MEDIC_RUN_ID = "31044951094";
+    process.env.MEDIC_RUN_COUNT = "1";
+    process.env.DEFAULT_WORKFLOW_TOKEN = "workflow-token";
+
+    const config = JSON.parse(
+      await prepareMcpTools({
+        githubToken: "app-token",
+        owner: "owner",
+        repo: "repo",
+        droidCommentId: "1",
+        allowedTools: MEDIC_ALLOWED_TOOLS,
+        mode: "tag",
+        context: {
+          eventName: "workflow_run",
+          repository: { owner: "owner", repo: "repo" },
+        } as any,
+      }),
+    );
+
+    for (const server of Object.values<any>(config.mcpServers ?? {})) {
+      for (const [key, value] of Object.entries(server.env ?? {})) {
+        expect(`${key}=${String(value)}`).not.toMatch(/[\s"'<>|&;$`\\]/);
+      }
+    }
+  });
+
   test("passes the medic pull request number to the inline comment server", async () => {
     process.env.MEDIC_PR_NUMBER = "42";
     process.env.DEFAULT_WORKFLOW_TOKEN = "workflow-token";

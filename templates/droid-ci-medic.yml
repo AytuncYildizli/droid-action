@@ -16,9 +16,13 @@ permissions:
 # Keyed on the pull request rather than the commit. Two workflows failing on
 # one commit raise two workflow_run events, and separate groups let both spend
 # a run from the budget for the same commit.
+# Runs are serialized per branch rather than cancelled. Concurrency applies to
+# the whole workflow, including runs whose job is skipped by the condition
+# below, so cancel-in-progress would let a passing workflow's skipped run kill
+# an in-flight diagnosis for a failing one.
 concurrency:
   group: ci-medic-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ci-medic:

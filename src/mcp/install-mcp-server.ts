@@ -109,8 +109,11 @@ export async function prepareMcpTools(
         REPO_NAME: repo,
         ...(droidCommentId && { DROID_COMMENT_ID: droidCommentId }),
         ...(medicPrNumber && { MEDIC_PR_NUMBER: medicPrNumber }),
-        ...(process.env.MEDIC_RUN_MARKER && {
-          MEDIC_RUN_MARKER: process.env.MEDIC_RUN_MARKER,
+        ...(process.env.MEDIC_RUN_ID && {
+          MEDIC_RUN_ID: process.env.MEDIC_RUN_ID,
+        }),
+        ...(process.env.MEDIC_RUN_COUNT && {
+          MEDIC_RUN_COUNT: process.env.MEDIC_RUN_COUNT,
         }),
         GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
         GITHUB_API_URL: GITHUB_API_URL,

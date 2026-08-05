@@ -64,13 +64,14 @@ server.tool(
       // re-reading the comment: a single failed read used to drop it, which
       // reset the pull request's lifetime count to zero. sanitizeContent
       // strips HTML comments, so it is always re-appended afterwards.
-      const medicMarker = process.env.MEDIC_RUN_MARKER;
+      const medicRunId = process.env.MEDIC_RUN_ID ?? "";
+      const medicRunCount = process.env.MEDIC_RUN_COUNT ?? "";
       if (
-        medicMarker &&
         !isPullRequestReviewComment &&
-        /^<!-- ci-medic:run=\d+ count=\d+ -->$/.test(medicMarker)
+        /^\d+$/.test(medicRunId) &&
+        /^\d+$/.test(medicRunCount)
       ) {
-        sanitizedBody = `${sanitizedBody}\n\n${medicMarker}`;
+        sanitizedBody = `${sanitizedBody}\n\n<!-- ci-medic:run=${medicRunId} count=${medicRunCount} -->`;
       }
 
       const result = await updateDroidComment(octokit, {
