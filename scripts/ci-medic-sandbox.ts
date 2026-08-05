@@ -214,6 +214,10 @@ const CI_WORKFLOW = `name: CI
 
 on:
   pull_request:
+  # Lets a second attempt-1 run be raised on an unchanged commit, which is how
+  # the duplicate-event path is exercised deterministically instead of waiting
+  # for two workflows to race.
+  workflow_dispatch:
 
 jobs:
   unit:
