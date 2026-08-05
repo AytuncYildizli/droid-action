@@ -55,7 +55,26 @@ server.tool(
       const isPullRequestReviewComment =
         eventName === "pull_request_review_comment";
 
-      const sanitizedBody = sanitizeContent(body);
+      let sanitizedBody = sanitizeContent(body);
+
+      // CI Medic keeps its lifetime run budget in a marker on this comment.
+      // Droid replaces the whole body, so carry the marker forward or every
+      // successful run silently erases its own record of having happened.
+      if (
+        process.env.MEDIC_PR_NUMBER &&
+        !isPullRequestReviewComment &&
+        !sanitizedBody.includes("<!-- ci-medic:run=")
+      ) {
+        const existing = await octokit.rest.issues
+          .getComment({ owner, repo, comment_id: commentId })
+          .catch(() => null);
+        const marker = existing?.data.body?.match(
+          /<!-- ci-medic:run=\S+ count=\d+ -->/,
+        )?.[0];
+        if (marker) {
+          sanitizedBody = `${sanitizedBody}\n\n${marker}`;
+        }
+      }
 
       const result = await updateDroidComment(octokit, {
         owner,

@@ -108,6 +108,7 @@ export async function prepareMcpTools(
         REPO_OWNER: owner,
         REPO_NAME: repo,
         ...(droidCommentId && { DROID_COMMENT_ID: droidCommentId }),
+        ...(medicPrNumber && { MEDIC_PR_NUMBER: medicPrNumber }),
         GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
         GITHUB_API_URL: GITHUB_API_URL,
       },

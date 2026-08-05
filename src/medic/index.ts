@@ -13,6 +13,8 @@ import {
 } from "./gate";
 import type { PrepareResult } from "../prepare/types";
 
+export const MEDIC_RUN_MARKER_PREFIX = "<!-- ci-medic:run=";
+
 // Every namespaced entry here must be backed by an MCP server that
 // prepareMcpTools actually installs for a workflow_run context, or the CLI
 // rejects the whole run with "Unknown tool identifier(s)".
@@ -110,9 +112,17 @@ export async function prepareMedicMode(
     issue_number: pr.number,
     per_page: 100,
   });
-  const medicRuns = comments.filter((comment) =>
-    comment.body?.includes("<!-- ci-medic:run="),
-  ).length;
+  // The lifetime count lives in a marker on a single reused tracking comment
+  // rather than in the number of comments, because Droid rewrites the body of
+  // the comment it is given and would otherwise erase each run's own record.
+  const trackingComment = comments.find((comment) =>
+    comment.body?.includes(MEDIC_RUN_MARKER_PREFIX),
+  );
+  const medicRuns = Number(
+    trackingComment?.body?.match(
+      /<!-- ci-medic:run=\S+ count=(\d+) -->/,
+    )?.[1] ?? 0,
+  );
   if (medicRuns >= config.max_runs_per_pr) {
     await octokit.rest.issues.createComment({
       owner: context.repository.owner,
@@ -131,12 +141,20 @@ export async function prepareMedicMode(
     run.id,
   );
 
-  const comment = await octokit.rest.issues.createComment({
-    owner: context.repository.owner,
-    repo: context.repository.repo,
-    issue_number: pr.number,
-    body: `## CI Medic\n\nCI Medic is analyzing the completed workflow run [${run.name}](${run.html_url}) and the other checks for this commit.\n\n<!-- ci-medic:run=${context.runId} count=${medicRuns + 1} -->`,
-  });
+  const trackingBody = `## CI Medic\n\nCI Medic is analyzing the completed workflow run [${run.name}](${run.html_url}) and the other checks for this commit.\n\n${MEDIC_RUN_MARKER_PREFIX}${context.runId} count=${medicRuns + 1} -->`;
+  const comment = trackingComment
+    ? await octokit.rest.issues.updateComment({
+        owner: context.repository.owner,
+        repo: context.repository.repo,
+        comment_id: trackingComment.id,
+        body: trackingBody,
+      })
+    : await octokit.rest.issues.createComment({
+        owner: context.repository.owner,
+        repo: context.repository.repo,
+        issue_number: pr.number,
+        body: trackingBody,
+      });
   core.setOutput("droid_comment_id", comment.data.id.toString());
   core.setOutput("medic_pr_number", pr.number.toString());
   core.setOutput("run_code_review", "false");
@@ -155,7 +173,11 @@ Auto-fix enabled: ${config.fix.enabled}; maximum fix attempts: ${config.fix.max_
 Allowed fix scope: ${config.fix.scope.join(", ")}. Protected paths: ${config.fix.protected_paths.join(", ")}.
 Commit prefix: ${config.fix.commit_prefix}
 
-If a failure is flaky or infrastructure-related and retries are allowed, rerun the failed job. If it is a real code failure and auto-fix is enabled, implement and verify a focused fix, then commit it to the PR branch using the commit prefix. If auto-fix is disabled, post high-confidence inline suggestions instead of changing files. Never modify protected paths. Update the CI Medic comment with a concise diagnosis, actions taken, and what remains.
+If a failure is flaky or infrastructure-related and retries are allowed, rerun the failed job. If it is a real code failure and auto-fix is enabled, implement and verify a focused fix, then commit it to the PR branch using the commit prefix. If auto-fix is disabled, post high-confidence inline suggestions instead of changing files. Never modify protected paths.
+
+This pull request may have been analyzed before. Read the existing review comments first and do not repost a suggestion that already exists for the same file and line.
+
+Report your findings by updating the existing CI Medic comment with a concise diagnosis, actions taken, and what remains. Update that one comment; do not create additional pull request comments.
 
 Additional repository instructions:
 ${config.instructions || "(none)"}`;

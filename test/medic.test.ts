@@ -5,7 +5,10 @@ import {
   shouldSkipPullRequest,
 } from "../src/medic/gate";
 import { prepareMcpTools } from "../src/mcp/install-mcp-server";
-import { MEDIC_ALLOWED_TOOLS } from "../src/medic/index";
+import {
+  MEDIC_ALLOWED_TOOLS,
+  MEDIC_RUN_MARKER_PREFIX,
+} from "../src/medic/index";
 
 const octokitWithConfig = (body: string) =>
   ({
@@ -138,6 +141,35 @@ describe("CI Medic MCP wiring", () => {
     );
 
     expect(config.mcpServers.github_inline_comment.env.PR_NUMBER).toBe("42");
+  });
+});
+
+describe("CI Medic run budget", () => {
+  const markerFor = (count: number) =>
+    `## CI Medic\n\ndiagnosis text\n\n<!-- ci-medic:run=99 count=${count} -->`;
+
+  const countFromComments = (bodies: string[]) => {
+    const tracking = bodies.find((body) =>
+      body.includes(MEDIC_RUN_MARKER_PREFIX),
+    );
+    return Number(
+      tracking?.match(/<!-- ci-medic:run=\S+ count=(\d+) -->/)?.[1] ?? 0,
+    );
+  };
+
+  // The count has to live in the marker, not in the number of marker comments:
+  // Droid rewrites the tracking comment body on every run.
+  test("reads the lifetime count from the surviving marker", () => {
+    expect(countFromComments(["unrelated", markerFor(3)])).toBe(3);
+  });
+
+  test("treats a pull request with no medic history as zero runs", () => {
+    expect(countFromComments(["some human comment"])).toBe(0);
+  });
+
+  test("does not undercount when Droid has rewritten the body around the marker", () => {
+    const rewritten = `## CI Medic\n\n**Diagnosis: real code failure.**\n\nlots of new content\n\n<!-- ci-medic:run=12345 count=7 -->`;
+    expect(countFromComments([rewritten])).toBe(7);
   });
 });
 
