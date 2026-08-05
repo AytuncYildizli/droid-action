@@ -55,8 +55,21 @@ function tokenize(text: string): string[] {
     .filter(Boolean);
 }
 
+// Only a step GitHub named itself is read, which it does by prefixing the
+// command with "Run". A human-written step name is prose, and matching prose
+// grants tools by coincidence: a deployment step called "Push preview bundle"
+// counted as a build and handed the model a shell, which is a gate failing
+// open. Job names stay in because they are short and deliberate.
+function scopeWords(check: FailedCheck): string[] {
+  const commands = check.steps
+    .map((step) => step.trim())
+    .filter((step) => /^run\s/i.test(step))
+    .map((step) => step.replace(/^run\s+/i, ""));
+  return tokenize([check.job, ...commands].join(" "));
+}
+
 export function checkCategories(check: FailedCheck): string[] {
-  const words = tokenize([check.job, ...check.steps].join(" "));
+  const words = scopeWords(check);
   return Object.entries(CATEGORY_ALIASES)
     .filter(([, aliases]) =>
       words.some((word) => aliases.some((alias) => word.startsWith(alias))),
@@ -68,7 +81,7 @@ export function checkMatchesScope(
   scope: string[],
   check: FailedCheck,
 ): boolean {
-  const words = tokenize([check.job, ...check.steps].join(" "));
+  const words = scopeWords(check);
   return scope.some((entry) => {
     const key = entry.toLowerCase().trim();
     // An unknown scope entry is matched on its own name, so a repository can

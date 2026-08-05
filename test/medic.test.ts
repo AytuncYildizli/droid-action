@@ -583,3 +583,38 @@ describe("CI Medic fix scope", () => {
     expect(checksInScope(DEFAULT, [check("deploy-staging")])).toEqual([]);
   });
 });
+
+describe("CI Medic fix scope, step names", () => {
+  const check = (job: string, ...steps: string[]) => ({
+    workflow: "CI",
+    job,
+    steps,
+  });
+  const DEFAULT = ["lint", "types", "tests", "build"];
+
+  // Caught live: a deploy job whose failing step was called "Push preview
+  // bundle" matched the build category on the word "bundle" and was handed
+  // the editing tools. Prose step names are not evidence of a category.
+  test("ignores a human-written step name", () => {
+    expect(
+      checkMatchesScope(
+        DEFAULT,
+        check("deploy-preview", "Push preview bundle"),
+      ),
+    ).toBe(false);
+    expect(
+      checkMatchesScope(DEFAULT, check("release", "Compile release notes")),
+    ).toBe(false);
+  });
+
+  // GitHub names an unnamed run step after its command, which is evidence.
+  test("still reads a step GitHub named after the command", () => {
+    expect(checkMatchesScope(DEFAULT, check("ci", "Run bun test"))).toBe(true);
+    expect(checkMatchesScope(DEFAULT, check("ci", "Run npm run build"))).toBe(
+      true,
+    );
+    expect(checkMatchesScope(DEFAULT, check("ci", "Run ./deploy.sh"))).toBe(
+      false,
+    );
+  });
+});
