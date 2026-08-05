@@ -1,11 +1,18 @@
-import { describe, expect, it, spyOn } from "bun:test";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import * as core from "@actions/core";
 import * as token from "../../src/github/token";
 import * as client from "../../src/github/api/client";
 import * as contextMod from "../../src/github/context";
 import * as validator from "../../src/tag/commands/review-validator";
 
+// A spy on an imported module outlives the file that installed it. Leaving
+// setupGitHubToken stubbed here made test/github/token.test.ts fail whenever
+// the runner happened to order this file first, which is what CI did.
 describe("prepare-validator entrypoint", () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
   it("fails when DROID_COMMENT_ID is missing", async () => {
     const setFailedSpy = spyOn(core, "setFailed").mockImplementation(() => {});
     const setOutputSpy = spyOn(core, "setOutput").mockImplementation(() => {});
