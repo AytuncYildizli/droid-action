@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { defaultMedicConfig, loadMedicConfig } from "../src/medic/config";
 import {
   shouldProcessWorkflow,
   shouldSkipPullRequest,
 } from "../src/medic/gate";
+import { prepareMcpTools } from "../src/mcp/install-mcp-server";
+import { MEDIC_ALLOWED_TOOLS } from "../src/medic/index";
 
 const octokitWithConfig = (body: string) =>
   ({
@@ -69,6 +71,73 @@ describe("CI Medic gates", () => {
         ["no-droid-ci"],
       ),
     ).toBe(true);
+  });
+});
+
+describe("CI Medic MCP wiring", () => {
+  const previousEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...previousEnv };
+  });
+
+  // A workflow_run payload is not an entity context, so every server gated on
+  // isEntityContext has to fall back to MEDIC_PR_NUMBER. When one does not, the
+  // CLI aborts the run with "Unknown tool identifier(s)" for its tools.
+  test("installs a server for every namespaced tool CI Medic allows", async () => {
+    process.env.MEDIC_PR_NUMBER = "42";
+    process.env.DEFAULT_WORKFLOW_TOKEN = "workflow-token";
+
+    const config = JSON.parse(
+      await prepareMcpTools({
+        githubToken: "app-token",
+        owner: "owner",
+        repo: "repo",
+        droidCommentId: "1",
+        allowedTools: MEDIC_ALLOWED_TOOLS,
+        mode: "tag",
+        context: {
+          eventName: "workflow_run",
+          repository: { owner: "owner", repo: "repo" },
+        } as any,
+      }),
+    );
+
+    const installed = Object.keys(config.mcpServers ?? {});
+    const required = [
+      ...new Set(
+        MEDIC_ALLOWED_TOOLS.filter((tool) => tool.includes("___")).map(
+          (tool) => tool.split("___")[0]!,
+        ),
+      ),
+    ];
+
+    expect(required.length).toBeGreaterThan(0);
+    for (const server of required) {
+      expect(installed).toContain(server);
+    }
+  });
+
+  test("passes the medic pull request number to the inline comment server", async () => {
+    process.env.MEDIC_PR_NUMBER = "42";
+    process.env.DEFAULT_WORKFLOW_TOKEN = "workflow-token";
+
+    const config = JSON.parse(
+      await prepareMcpTools({
+        githubToken: "app-token",
+        owner: "owner",
+        repo: "repo",
+        droidCommentId: "1",
+        allowedTools: MEDIC_ALLOWED_TOOLS,
+        mode: "tag",
+        context: {
+          eventName: "workflow_run",
+          repository: { owner: "owner", repo: "repo" },
+        } as any,
+      }),
+    );
+
+    expect(config.mcpServers.github_inline_comment.env.PR_NUMBER).toBe("42");
   });
 });
 

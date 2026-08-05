@@ -13,6 +13,26 @@ import {
 } from "./gate";
 import type { PrepareResult } from "../prepare/types";
 
+// Every namespaced entry here must be backed by an MCP server that
+// prepareMcpTools actually installs for a workflow_run context, or the CLI
+// rejects the whole run with "Unknown tool identifier(s)".
+export const MEDIC_ALLOWED_TOOLS = [
+  "Read",
+  "Grep",
+  "Glob",
+  "LS",
+  "Execute",
+  "Edit",
+  "Create",
+  "ApplyPatch",
+  "github_comment___update_droid_comment",
+  "github_ci___get_ci_status",
+  "github_ci___get_workflow_run_details",
+  "github_ci___download_job_log",
+  "github_ci___rerun_failed_job",
+  "github_inline_comment___create_inline_comment",
+];
+
 export async function prepareMedicMode(
   context: AutomationContext,
   octokit: Octokits,
@@ -147,22 +167,7 @@ ${config.instructions || "(none)"}`;
     prompt,
   );
 
-  const allowedTools = [
-    "Read",
-    "Grep",
-    "Glob",
-    "LS",
-    "Execute",
-    "Edit",
-    "Create",
-    "ApplyPatch",
-    "github_comment___update_droid_comment",
-    "github_ci___get_ci_status",
-    "github_ci___get_workflow_run_details",
-    "github_ci___download_job_log",
-    "github_ci___rerun_failed_job",
-    "github_inline_comment___create_inline_comment",
-  ];
+  const allowedTools = MEDIC_ALLOWED_TOOLS;
   const mcpTools = await prepareMcpTools({
     githubToken,
     owner: context.repository.owner,

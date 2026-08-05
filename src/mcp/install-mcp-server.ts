@@ -84,6 +84,18 @@ export async function prepareMcpTools(
       tool.startsWith("github_pr___"),
     );
 
+    // CI Medic runs on workflow_run, which is not an entity context, so the
+    // pull request it is acting on arrives through the environment instead.
+    const medicPrNumber = process.env.MEDIC_PR_NUMBER;
+    const isPullRequestRun =
+      (isEntityContext(context) && context.isPR) || Boolean(medicPrNumber);
+    const pullRequestNumber =
+      (isEntityContext(context) && context.isPR
+        ? context.entityNumber?.toString()
+        : undefined) ||
+      medicPrNumber ||
+      "";
+
     const baseMcpTools: { mcpServers: Record<string, unknown> } = {
       mcpServers: {},
     };
@@ -102,11 +114,7 @@ export async function prepareMcpTools(
     };
 
     // Include inline comment server for PRs when requested via allowed tools
-    if (
-      isEntityContext(context) &&
-      context.isPR &&
-      (hasGitHubMcpTools || hasInlineCommentTools)
-    ) {
+    if (isPullRequestRun && (hasGitHubMcpTools || hasInlineCommentTools)) {
       baseMcpTools.mcpServers.github_inline_comment = {
         command: "bun",
         args: ["run", `${repoRoot}/src/mcp/github-inline-comment-server.ts`],
@@ -114,17 +122,14 @@ export async function prepareMcpTools(
           GITHUB_TOKEN: githubToken,
           REPO_OWNER: owner,
           REPO_NAME: repo,
-          PR_NUMBER: context.entityNumber?.toString() || "",
+          PR_NUMBER: pullRequestNumber,
           GITHUB_API_URL: GITHUB_API_URL,
         },
       };
     }
 
     const hasWorkflowToken = !!process.env.DEFAULT_WORKFLOW_TOKEN;
-    const medicPrNumber = process.env.MEDIC_PR_NUMBER;
-    const shouldIncludeCIServer =
-      ((isEntityContext(context) && context.isPR) || Boolean(medicPrNumber)) &&
-      hasWorkflowToken;
+    const shouldIncludeCIServer = isPullRequestRun && hasWorkflowToken;
 
     if (shouldIncludeCIServer) {
       // Verify the token actually has actions:read permission
@@ -149,12 +154,7 @@ export async function prepareMcpTools(
           GITHUB_TOKEN: process.env.DEFAULT_WORKFLOW_TOKEN,
           REPO_OWNER: owner,
           REPO_NAME: repo,
-          PR_NUMBER:
-            (isEntityContext(context)
-              ? context.entityNumber?.toString()
-              : "") ||
-            medicPrNumber ||
-            "",
+          PR_NUMBER: pullRequestNumber,
           RUNNER_TEMP: process.env.RUNNER_TEMP || "/tmp",
         },
       };
