@@ -16,6 +16,11 @@ import {
   isCommitAlreadyProcessed,
 } from "../src/medic/index";
 import { protectedViolations } from "../src/medic/postrun";
+import {
+  checkCategories,
+  checkMatchesScope,
+  checksInScope,
+} from "../src/medic/scope";
 
 const octokitWithConfig = (body: string) =>
   ({
@@ -513,5 +518,68 @@ describe("CI Medic config loading", () => {
       {},
     );
     expect(config).toEqual(defaultMedicConfig());
+  });
+});
+
+describe("CI Medic fix scope", () => {
+  const check = (job: string, ...steps: string[]) => ({
+    workflow: "CI",
+    job,
+    steps,
+  });
+  const DEFAULT = ["lint", "types", "tests", "build"];
+
+  // The scope names categories, but repositories name jobs. Matching the
+  // configured words literally would switch auto-fix off nearly everywhere.
+  test("recognizes the job names repositories actually use", () => {
+    expect(checkCategories(check("unit"))).toContain("tests");
+    expect(checkCategories(check("typecheck"))).toContain("types");
+    expect(checkCategories(check("eslint"))).toContain("lint");
+    expect(checkCategories(check("build-and-push"))).toContain("build");
+  });
+
+  test("reads the failing step when the job name says nothing", () => {
+    expect(checkMatchesScope(DEFAULT, check("ci", "Run bun test"))).toBe(true);
+    expect(checkMatchesScope(DEFAULT, check("ci", "Run bun run lint"))).toBe(
+      true,
+    );
+  });
+
+  test("holds a deployment failure outside the default scope", () => {
+    expect(checkMatchesScope(DEFAULT, check("deploy-staging"))).toBe(false);
+    expect(
+      checkMatchesScope(DEFAULT, check("publish", "Run npm publish")),
+    ).toBe(false);
+  });
+
+  test("honors a narrowed scope", () => {
+    expect(checkMatchesScope(["lint"], check("unit", "Run bun test"))).toBe(
+      false,
+    );
+    expect(checkMatchesScope(["lint"], check("lint"))).toBe(true);
+  });
+
+  test("matches an unknown scope entry on its own name", () => {
+    expect(checkMatchesScope(["docs"], check("docs-build"))).toBe(true);
+  });
+
+  // A word must not match because a category name happens to sit inside it.
+  test("does not match a category buried in an unrelated word", () => {
+    expect(checkMatchesScope(["tests"], check("latest-release"))).toBe(false);
+    expect(checkMatchesScope(["build"], check("rebuild-cache"))).toBe(false);
+  });
+
+  test("keeps only the failing checks that are in scope", () => {
+    const failed = [
+      check("deploy-staging"),
+      check("unit", "Run bun test"),
+      check("lint"),
+    ];
+    expect(checksInScope(DEFAULT, failed).map((c) => c.job)).toEqual([
+      "unit",
+      "lint",
+    ]);
+    expect(checksInScope(["lint"], failed).map((c) => c.job)).toEqual(["lint"]);
+    expect(checksInScope(DEFAULT, [check("deploy-staging")])).toEqual([]);
   });
 });

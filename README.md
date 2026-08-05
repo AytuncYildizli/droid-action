@@ -51,6 +51,14 @@ Two further limits follow from the same reasoning:
   A diagnosis-only run cannot modify the working tree.
 - `fix.protected_paths` is enforced after the run, not merely requested in the
   prompt. Changes to a protected path are reverted and the job fails.
+- `fix.scope` decides which failures may be fixed, and is enforced by
+  withholding the editing tools rather than by asking. The failing jobs for the
+  commit are classified before Droid starts, and if none of them fall inside
+  the scope the run is diagnosis-only. A commit whose only failure is
+  `deploy-staging` therefore cannot be modified under the default scope, even
+  with `auto_fix` on. Job names are matched by category, so `unit`, `tsc` and
+  `eslint` are recognized as `tests`, `types` and `lint`; an unrecognized name
+  stays out of scope, and the reason is printed in the job log.
 
 ## What Happens When You Tag `@droid`
 

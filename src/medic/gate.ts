@@ -1,6 +1,7 @@
 import type { WorkflowRunEvent } from "@octokit/webhooks-types";
 import type { Octokits } from "../github/api/client";
 import type { MedicConfig } from "./config";
+import type { FailedCheck } from "./scope";
 
 export type MedicPullRequest = {
   number: number;
@@ -120,6 +121,54 @@ export function shouldSkipPullRequest(
     config.skip.branches.some((pattern) => wildcard(pattern, pr.baseRef)) ||
     config.skip.labels.some((label) => labels.includes(label))
   );
+}
+
+// What failed decides whether CI Medic may fix anything, so this has to be
+// read from the API rather than inferred from the triggering event: one event
+// names one workflow, while the fix scope is a question about the commit.
+export async function failedChecksForCommit(
+  octokit: Octokits,
+  owner: string,
+  repo: string,
+  headSha: string,
+  currentRunId: number,
+): Promise<FailedCheck[]> {
+  const selfName = process.env.GITHUB_WORKFLOW;
+  const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({
+    owner,
+    repo,
+    head_sha: headSha,
+    per_page: 100,
+  });
+  const failedRuns = data.workflow_runs.filter(
+    (run) =>
+      run.id !== currentRunId &&
+      run.name !== selfName &&
+      (run.conclusion === "failure" || run.conclusion === "timed_out"),
+  );
+
+  const checks: FailedCheck[] = [];
+  for (const run of failedRuns) {
+    const jobs = await octokit.rest.paginate(
+      octokit.rest.actions.listJobsForWorkflowRun,
+      { owner, repo, run_id: run.id, per_page: 100 },
+    );
+    for (const job of jobs) {
+      if (job.conclusion !== "failure" && job.conclusion !== "timed_out")
+        continue;
+      checks.push({
+        workflow: run.name ?? "",
+        job: job.name,
+        steps: (job.steps ?? [])
+          .filter(
+            (step) =>
+              step.conclusion === "failure" || step.conclusion === "timed_out",
+          )
+          .map((step) => step.name),
+      });
+    }
+  }
+  return checks;
 }
 
 export async function waitForChecksToFinish(
