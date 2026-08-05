@@ -6,9 +6,12 @@ on:
     types: [completed]
 
 permissions:
+  # actions: write covers reading failed job logs and rerunning jobs, which
+  # always go through the workflow token rather than the app token.
   actions: write
   contents: write
   pull-requests: write
+  id-token: write
 
 concurrency:
   group: ci-medic-${{ github.event.workflow_run.head_sha }}
@@ -41,6 +44,10 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
+      # No github_token is passed on purpose. The action exchanges the OIDC
+      # token for a Factory Droid App token, and pushes made with an app token
+      # start a new CI run. A push made with secrets.GITHUB_TOKEN does not,
+      # so an auto-fix commit would otherwise sit under stale failing checks.
       - name: Run CI Medic
         uses: Factory-AI/droid-action@v1
         with:
@@ -48,4 +55,3 @@ jobs:
           ci_medic: "true"
           auto_fix: "false"
           retry_mode: smart
-          github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -310,6 +310,7 @@ permissions:
   actions: write
   contents: write
   pull-requests: write
+  id-token: write
 
 concurrency:
   group: ci-medic-\${{ github.event.workflow_run.head_sha }}
@@ -341,7 +342,6 @@ jobs:
         uses: Factory-AI/droid-action@${droidRef}
         with:
           factory_api_key: \${{ secrets.FACTORY_API_KEY }}
-          github_token: \${{ secrets.GITHUB_TOKEN }}
           ci_medic: "true"
           auto_fix: \${{ (startsWith(github.event.workflow_run.head_branch, 'fix-on/') || startsWith(github.event.workflow_run.head_branch, 'protected/')) && 'true' || 'false' }}
           retry_mode: \${{ startsWith(github.event.workflow_run.head_branch, 'noretry/') && 'off' || 'smart' }}

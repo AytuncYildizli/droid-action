@@ -19,6 +19,13 @@ Copy `templates/droid-ci-medic.yml` to `.github/workflows/ci-medic.yml` and
 replace the workflow names with the checks you want to monitor. Enable direct
 fixes with `auto_fix: "true"` only when the workflow has `contents: write`.
 
+Leave `github_token` unset so the action authenticates as the Factory Droid
+GitHub App, and keep `id-token: write` in the permissions block. This matters
+more here than elsewhere: GitHub does not start a new workflow run for a push
+made with `secrets.GITHUB_TOKEN`, so an auto-fix commit would land under stale
+failing checks and never be verified. Reading job logs and rerunning jobs
+always use the workflow token, which is why `actions: write` is also required.
+
 The optional `.github/droid-ci.yml` file can configure `retry`, `fix`,
 `workflows.exclude`, `skip`, `instructions`, and the lifetime
 `max_runs_per_pr` budget. The budgets have distinct scopes:
