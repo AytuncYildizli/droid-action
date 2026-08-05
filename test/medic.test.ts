@@ -13,6 +13,7 @@ import {
   medicAllowedTools,
   medicRunCount,
   medicRunSha,
+  isCommitAlreadyProcessed,
 } from "../src/medic/index";
 import { protectedViolations } from "../src/medic/postrun";
 
@@ -240,6 +241,23 @@ describe("CI Medic run budget", () => {
         { body: "<!-- ci-medic:run=1 count=999 -->", user: human },
       ]),
     ).toBe(0);
+  });
+
+  test("skips a second workflow failing on an already analyzed commit", () => {
+    expect(isCommitAlreadyProcessed("abc123f", "abc123f", 1)).toBe(true);
+  });
+
+  test("still analyzes a different commit", () => {
+    expect(isCommitAlreadyProcessed("abc123f", "def456a", 1)).toBe(false);
+  });
+
+  // A rerun that fails again is a new outcome, not a duplicate event.
+  test("still analyzes a failed rerun of the same commit", () => {
+    expect(isCommitAlreadyProcessed("abc123f", "abc123f", 2)).toBe(false);
+  });
+
+  test("analyzes when no commit was ever recorded", () => {
+    expect(isCommitAlreadyProcessed(undefined, "abc123f", 1)).toBe(false);
   });
 });
 

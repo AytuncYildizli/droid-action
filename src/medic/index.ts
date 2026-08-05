@@ -78,6 +78,18 @@ export function medicRunSha(comments: MedicComment[]): string | undefined {
   return body.match(MEDIC_MARKER_PATTERN)?.[2];
 }
 
+// The concurrency group cancels a duplicate that is still pending, but one
+// arriving after the first run finished reaches this instead. A failed rerun
+// carries a higher attempt and is a new outcome worth analyzing.
+export function isCommitAlreadyProcessed(
+  recordedSha: string | undefined,
+  headSha: string,
+  runAttempt: number | undefined,
+): boolean {
+  if (!recordedSha) return false;
+  return recordedSha === headSha && Number(runAttempt ?? 1) <= 1;
+}
+
 export function medicAllowedTools(fixEnabled: boolean): string[] {
   return fixEnabled
     ? [...MEDIC_DIAGNOSIS_TOOLS, ...MEDIC_FIX_TOOLS]
@@ -212,8 +224,7 @@ export async function prepareMedicMode(
   // spend a budget unit each. A rerun that fails is a genuinely new outcome,
   // so an attempt above the first is still allowed through.
   if (
-    medicRunSha(comments) === pr.headSha &&
-    Number(run.run_attempt ?? 1) <= 1
+    isCommitAlreadyProcessed(medicRunSha(comments), pr.headSha, run.run_attempt)
   ) {
     return skippedResult("commit_already_processed");
   }
