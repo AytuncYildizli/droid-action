@@ -275,7 +275,7 @@ jobs:
       - run: bash ci/deploy.sh
 `;
 
-const DROID_CI_CONFIG = `# Read from the base branch, so a pull request cannot reconfigure the bot.
+const DROID_CI_CONFIG = `# Read from the default branch, so a pull request cannot reconfigure the bot.
 instructions: "Prefer the smallest possible fix. Never retry deployment jobs."
 workflows:
   exclude: ["Deploy *"]
@@ -314,29 +314,21 @@ permissions:
   id-token: write
 
 concurrency:
-  group: ci-medic-\${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: false
+  group: ci-medic-\${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
 
 jobs:
   ci-medic:
     if: >
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.conclusion != 'success' &&
       github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pull request branch
-        id: checkout_branch
-        continue-on-error: true
         uses: actions/checkout@v4
         with:
           ref: \${{ github.event.workflow_run.head_branch }}
-          fetch-depth: 0
-
-      - name: Checkout pull request commit
-        if: steps.checkout_branch.outcome == 'failure'
-        uses: actions/checkout@v4
-        with:
-          ref: \${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Run CI Medic

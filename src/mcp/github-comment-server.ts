@@ -60,20 +60,17 @@ server.tool(
       // CI Medic keeps its lifetime run budget in a marker on this comment.
       // Droid replaces the whole body, so carry the marker forward or every
       // successful run silently erases its own record of having happened.
+      // The marker is supplied by the prepare step rather than recovered by
+      // re-reading the comment: a single failed read used to drop it, which
+      // reset the pull request's lifetime count to zero. sanitizeContent
+      // strips HTML comments, so it is always re-appended afterwards.
+      const medicMarker = process.env.MEDIC_RUN_MARKER;
       if (
-        process.env.MEDIC_PR_NUMBER &&
+        medicMarker &&
         !isPullRequestReviewComment &&
-        !sanitizedBody.includes("<!-- ci-medic:run=")
+        /^<!-- ci-medic:run=\d+ count=\d+ -->$/.test(medicMarker)
       ) {
-        const existing = await octokit.rest.issues
-          .getComment({ owner, repo, comment_id: commentId })
-          .catch(() => null);
-        const marker = existing?.data.body?.match(
-          /<!-- ci-medic:run=\S+ count=\d+ -->/,
-        )?.[0];
-        if (marker) {
-          sanitizedBody = `${sanitizedBody}\n\n${marker}`;
-        }
+        sanitizedBody = `${sanitizedBody}\n\n${medicMarker}`;
       }
 
       const result = await updateDroidComment(octokit, {

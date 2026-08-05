@@ -173,18 +173,9 @@ export function parseGitHubContext(): GitHubContext {
       ciMedic: process.env.CI_MEDIC === "true",
       autoFix: process.env.AUTO_FIX === "true",
       retryMode: parseRetryMode(process.env.RETRY_MODE),
-      maxRetries: Math.max(
-        0,
-        parseInt(process.env.MAX_RETRIES ?? "1", 10) || 1,
-      ),
-      maxFixAttempts: Math.max(
-        0,
-        parseInt(process.env.MAX_FIX_ATTEMPTS ?? "2", 10) || 2,
-      ),
-      maxRunsPerPr: Math.max(
-        1,
-        parseInt(process.env.MAX_RUNS_PER_PR ?? "10", 10) || 10,
-      ),
+      maxRetries: parseCount(process.env.MAX_RETRIES, 1, 0),
+      maxFixAttempts: parseCount(process.env.MAX_FIX_ATTEMPTS, 2, 0),
+      maxRunsPerPr: parseCount(process.env.MAX_RUNS_PER_PR, 10, 1),
       medicModel: process.env.MEDIC_MODEL ?? "",
       instructions: process.env.INSTRUCTIONS ?? "",
       configPath: process.env.CONFIG_PATH ?? ".github/droid-ci.yml",
@@ -278,6 +269,17 @@ export function parseGitHubContext(): GitHubContext {
 
 function parseRetryMode(value: string | undefined): "off" | "always" | "smart" {
   return value === "off" || value === "always" ? value : "smart";
+}
+
+// `parseInt(...) || fallback` discarded an explicit 0, so max_retries: "0"
+// silently became one retry. Only genuinely unparseable input falls back.
+function parseCount(
+  value: string | undefined,
+  fallback: number,
+  minimum: number,
+): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) ? Math.max(minimum, parsed) : fallback;
 }
 
 export function isIssuesEvent(

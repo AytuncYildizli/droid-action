@@ -28,11 +28,29 @@ always use the workflow token, which is why `actions: write` is also required.
 
 The optional `.github/droid-ci.yml` file can configure `retry`, `fix`,
 `workflows.exclude`, `skip`, `instructions`, and the lifetime
-`max_runs_per_pr` budget. The budgets have distinct scopes:
+`max_runs_per_pr` budget. It is always read from the repository's **default
+branch**, never from the pull request, so a branch cannot grant itself
+auto-fix or clear its own protected paths. The budgets have distinct scopes:
 
 - `max_retries` limits reruns of one failed job for one commit.
 - `max_fix_attempts` limits consecutive fix commits from CI Medic.
 - `max_runs_per_pr` limits all CI Medic invocations over the PR lifetime.
+
+### Trust boundary
+
+**CI Medic does not run on pull requests from forks.** `workflow_run` executes
+in the base repository with write-scoped tokens and access to secrets, so
+checking out a fork's commit and running commands against it would hand the
+pull request author the app token, the workflow token, and your Factory API
+key. The template enforces this with a job-level condition, and the action
+re-checks it in case CI Medic is wired into a hand-written workflow.
+
+Two further limits follow from the same reasoning:
+
+- The shell and file-writing tools are granted only when `fix.enabled` is on.
+  A diagnosis-only run cannot modify the working tree.
+- `fix.protected_paths` is enforced after the run, not merely requested in the
+  prompt. Changes to a protected path are reverted and the job fails.
 
 ## What Happens When You Tag `@droid`
 

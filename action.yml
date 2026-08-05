@@ -334,6 +334,19 @@ runs:
         DETAILED_PERMISSION_MESSAGES: "1"
         FACTORY_API_KEY: ${{ inputs.factory_api_key }}
 
+    - name: CI Medic post-run
+      if: steps.prepare.outputs.medic_skipped != 'true' && github.event_name == 'workflow_run' && steps.prepare.outputs.droid_comment_id && always()
+      shell: bash
+      run: |
+        bun run ${GITHUB_ACTION_PATH}/src/medic/postrun.ts
+      env:
+        REPOSITORY: ${{ github.repository }}
+        GITHUB_TOKEN: ${{ steps.prepare.outputs.github_token }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        DROID_COMMENT_ID: ${{ steps.prepare.outputs.droid_comment_id }}
+        DROID_CONCLUSION: ${{ steps.droid.outputs.conclusion }}
+
     - name: Prepare validator
       id: prepare_validator
       if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true' && steps.prepare.outputs.run_code_review == 'true'

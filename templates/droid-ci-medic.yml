@@ -13,13 +13,21 @@ permissions:
   pull-requests: write
   id-token: write
 
+# Keyed on the pull request rather than the commit. Two workflows failing on
+# one commit raise two workflow_run events, and separate groups let both spend
+# a run from the budget for the same commit.
 concurrency:
-  group: ci-medic-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: false
+  group: ci-medic-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
 
 jobs:
   ci-medic:
+    # Fork pull requests are not processed. workflow_run runs in the base
+    # repository with write-scoped tokens and secrets, so checking out a fork's
+    # commit here and running commands against it would hand a pull request
+    # author the app token, the workflow token, and the Factory API key.
     if: >
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.conclusion != 'success' &&
       github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
@@ -27,21 +35,9 @@ jobs:
       # Check out the head branch (not the merge commit) so CI Medic can
       # reproduce failures and, when auto_fix is on, commit to a real branch.
       - name: Checkout pull request branch
-        id: checkout_branch
-        continue-on-error: true
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
-          fetch-depth: 0
-
-      # Fork branches do not exist in the base repository. Fall back to a
-      # detached checkout so diagnosis still works; CI Medic downgrades to
-      # comment-only because it cannot push to a fork.
-      - name: Checkout pull request commit
-        if: steps.checkout_branch.outcome == 'failure'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       # No github_token is passed on purpose. The action exchanges the OIDC

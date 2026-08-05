@@ -1,3 +1,4 @@
+import { parse as parseYaml } from "yaml";
 import type { Octokits } from "../github/api/client";
 
 export type MedicConfig = {
@@ -25,6 +26,17 @@ export type MedicConfig = {
   max_runs_per_pr: number;
 };
 
+// Callers supply only the keys they mean to change; every absent key keeps the
+// value it already had rather than reverting to a default.
+export type MedicConfigOverride = {
+  instructions?: string;
+  workflows?: Partial<MedicConfig["workflows"]>;
+  retry?: Partial<MedicConfig["retry"]>;
+  fix?: Partial<MedicConfig["fix"]>;
+  skip?: Partial<MedicConfig["skip"]>;
+  max_runs_per_pr?: number;
+};
+
 export const defaultMedicConfig = (): MedicConfig => ({
   instructions: "",
   workflows: { exclude: [] },
@@ -40,54 +52,21 @@ export const defaultMedicConfig = (): MedicConfig => ({
   max_runs_per_pr: 10,
 });
 
-// Deliberately small parser for the documented config shape. Values are merged
-// with action inputs, so malformed or unsupported lines safely remain defaults.
-function parseConfig(text: string): Partial<MedicConfig> {
+// A hand-rolled parser previously handled only `key: value` on one line, which
+// silently dropped block sequences and any top-level key following a nested
+// block. Dropping a `protected_paths` list to the default reads as success, so
+// the failure mode was an invisible loss of a safety limit. Parse real YAML.
+function parseConfig(text: string): MedicConfigOverride {
   try {
-    return JSON.parse(text) as Partial<MedicConfig>;
+    return asRecord(parseYaml(text)) as MedicConfigOverride;
   } catch {
-    const result: Record<string, unknown> = {};
-    let section = "";
-    for (const raw of text.split(/\r?\n/)) {
-      const line = raw.replace(/#.*/, "").trimEnd();
-      if (!line.trim() || line.startsWith("---")) continue;
-      const sectionMatch = /^([A-Za-z_]+):\s*$/.exec(line);
-      if (sectionMatch) {
-        section = sectionMatch[1]!;
-        result[section] = {};
-        continue;
-      }
-      const match = /^\s*([A-Za-z_]+):\s*(.+)$/.exec(line);
-      if (!match) continue;
-      const key = match[1]!;
-      const value = match[2]!;
-      const parsed = value.replace(/^['"]|['"]$/g, "");
-      const target = section
-        ? (result[section] as Record<string, unknown>)
-        : result;
-      target[key] = parseScalar(parsed);
-    }
-    return result as Partial<MedicConfig>;
+    // A malformed file must not silently run with defaults, because the
+    // defaults may be weaker than what the author wrote.
+    throw new MedicConfigError("configuration file is not valid YAML");
   }
 }
 
-function parseScalar(value: string): unknown {
-  if (value === "true") return true;
-  if (value === "false") return false;
-  if (value !== "" && !Number.isNaN(Number(value))) return Number(value);
-  if (value.startsWith("[") || value.startsWith("{")) {
-    try {
-      // Flow-style YAML leaves keys unquoted, which JSON.parse rejects.
-      const quoted = value
-        .replace(/'/g, '"')
-        .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":');
-      return JSON.parse(quoted);
-    } catch {
-      return value;
-    }
-  }
-  return value;
-}
+export class MedicConfigError extends Error {}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -131,7 +110,7 @@ function asString(value: unknown, fallback: string): string {
 // than leave a nested object undefined for downstream gate checks.
 function mergeConfig(
   base: MedicConfig,
-  override: Partial<MedicConfig>,
+  override: MedicConfigOverride,
 ): MedicConfig {
   const source = asRecord(override);
   const workflows = asRecord(source.workflows);
@@ -178,26 +157,26 @@ export async function loadMedicConfig(
   octokit: Octokits,
   owner: string,
   repo: string,
-  ref: string,
+  ref: string | undefined,
   path: string,
-  actionInputs: Partial<MedicConfig>,
+  actionInputs: MedicConfigOverride,
 ): Promise<MedicConfig> {
-  let fileConfig: Partial<MedicConfig> = {};
+  let fileConfig: MedicConfigOverride = {};
+  let raw: string | undefined;
   try {
     const response = await octokit.rest.repos.getContent({
       owner,
       repo,
       path,
-      ref,
+      ...(ref ? { ref } : {}),
     });
     if (!Array.isArray(response.data) && "content" in response.data) {
-      fileConfig = parseConfig(
-        Buffer.from(response.data.content, "base64").toString("utf8"),
-      );
+      raw = Buffer.from(response.data.content, "base64").toString("utf8");
     }
   } catch {
-    // Configuration is optional.
+    // Configuration is optional; only its contents are validated.
   }
+  if (raw !== undefined) fileConfig = parseConfig(raw);
   return mergeConfig(
     mergeConfig(defaultMedicConfig(), fileConfig),
     actionInputs,
