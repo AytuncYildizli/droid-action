@@ -1,5 +1,5 @@
 name: "Droid by Factory"
-description: "Flexible GitHub automation platform with Droid. Auto-detects mode based on event type: PR reviews, @droid mentions, or custom automation."
+description: "Flexible GitHub automation with Droid: PR reviews, @droid mentions, or custom automation, auto-detected from the event."
 branding:
   icon: "at-sign"
   color: "orange"
