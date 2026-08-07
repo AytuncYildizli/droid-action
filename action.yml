@@ -1,4 +1,4 @@
-name: "Factory Droid Action"
+name: "Droid by Factory"
 description: "Flexible GitHub automation platform with Droid. Auto-detects mode based on event type: PR reviews, @droid mentions, or custom automation."
 branding:
   icon: "at-sign"
