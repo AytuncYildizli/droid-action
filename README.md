@@ -9,6 +9,57 @@ This GitHub Action powers the Factory **Droid** app. It watches your pull reques
 
 Everything runs inside GitHub Actions using your Factory API key, so the bot never leaves your repository and operates with the permissions you grant.
 
+## CI Medic
+
+CI Medic runs after configured workflows complete. It waits for all checks on
+the commit, summarizes failed job logs, retries flaky or infrastructure
+failures, and either commits a focused fix or posts inline suggestions.
+
+Copy `templates/droid-ci-medic.yml` to `.github/workflows/ci-medic.yml` and
+replace the workflow names with the checks you want to monitor. Enable direct
+fixes with `auto_fix: "true"` only when the workflow has `contents: write`.
+
+Leave `github_token` unset so the action authenticates as the Factory Droid
+GitHub App, and keep `id-token: write` in the permissions block. This matters
+more here than elsewhere: GitHub does not start a new workflow run for a push
+made with `secrets.GITHUB_TOKEN`, so an auto-fix commit would land under stale
+failing checks and never be verified. Reading job logs and rerunning jobs
+always use the workflow token, which is why `actions: write` is also required.
+
+The optional `.github/droid-ci.yml` file can configure `retry`, `fix`,
+`workflows.exclude`, `skip`, `instructions`, and the lifetime
+`max_runs_per_pr` budget. It is always read from the repository's **default
+branch**, never from the pull request, so a branch cannot grant itself
+auto-fix or clear its own protected paths. The budgets have distinct scopes:
+
+- `max_retries` limits reruns of one failed job for one commit.
+- `max_fix_attempts` limits consecutive fix commits from CI Medic.
+- `max_runs_per_pr` limits all CI Medic invocations over the PR lifetime.
+
+### Trust boundary
+
+**CI Medic does not run on pull requests from forks.** `workflow_run` executes
+in the base repository with write-scoped tokens and access to secrets, so
+checking out a fork's commit and running commands against it would hand the
+pull request author the app token, the workflow token, and your Factory API
+key. The template enforces this with a job-level condition, and the action
+re-checks it in case CI Medic is wired into a hand-written workflow.
+
+Two further limits follow from the same reasoning:
+
+- The shell and file-writing tools are granted only when `fix.enabled` is on.
+  A diagnosis-only run cannot modify the working tree.
+- `fix.protected_paths` is enforced after the run, not merely requested in the
+  prompt. Changes to a protected path are reverted and the job fails.
+- `fix.scope` decides which failures may be fixed, and is enforced by
+  withholding the editing tools rather than by asking. The failing jobs for the
+  commit are classified before Droid starts, and if none of them fall inside
+  the scope the run is diagnosis-only. A commit whose only failure is
+  `deploy-staging` therefore cannot be modified under the default scope, even
+  with `auto_fix` on. Job names are matched by category, so `unit`, `tsc` and
+  `eslint` are recognized as `tests`, `types` and `lint`; an unrecognized name
+  stays out of scope, and the reason is printed in the job log.
+
 ## What Happens When You Tag `@droid`
 
 1. **Trigger detection** – The action scans issue comments, PR descriptions, and review comments for `@droid` commands.

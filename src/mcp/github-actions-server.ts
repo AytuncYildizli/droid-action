@@ -28,6 +28,37 @@ const server = new McpServer({
 console.error("[GitHub CI Server] MCP Server instance created");
 
 server.tool(
+  "rerun_failed_job",
+  "Rerun a failed GitHub Actions job",
+  { job_id: z.number().describe("The job ID") },
+  async ({ job_id }) => {
+    try {
+      const client = new Octokit({
+        auth: GITHUB_TOKEN,
+        baseUrl: GITHUB_API_URL,
+      });
+      await client.actions.reRunJobForWorkflowRun({
+        owner: REPO_OWNER!,
+        repo: REPO_NAME!,
+        job_id,
+      });
+      return {
+        content: [
+          { type: "text", text: JSON.stringify({ job_id, rerun: true }) },
+        ],
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        content: [{ type: "text", text: `Error: ${message}` }],
+        isError: true,
+        error: message,
+      };
+    }
+  },
+);
+
+server.tool(
   "get_ci_status",
   "Get CI status summary for this PR",
   {

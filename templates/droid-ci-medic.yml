@@ -1,0 +1,57 @@
+name: CI Medic
+
+on:
+  workflow_run:
+    workflows: ["CI", "Tests"]
+    types: [completed]
+
+permissions:
+  # actions: write covers reading failed job logs and rerunning jobs, which
+  # always go through the workflow token rather than the app token.
+  actions: write
+  contents: write
+  pull-requests: write
+  id-token: write
+
+# Keyed on the pull request rather than the commit. Two workflows failing on
+# one commit raise two workflow_run events, and separate groups let both spend
+# a run from the budget for the same commit.
+# Runs are serialized per branch rather than cancelled. Concurrency applies to
+# the whole workflow, including runs whose job is skipped by the condition
+# below, so cancel-in-progress would let a passing workflow's skipped run kill
+# an in-flight diagnosis for a failing one.
+concurrency:
+  group: ci-medic-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  ci-medic:
+    # Fork pull requests are not processed. workflow_run runs in the base
+    # repository with write-scoped tokens and secrets, so checking out a fork's
+    # commit here and running commands against it would hand a pull request
+    # author the app token, the workflow token, and the Factory API key.
+    if: >
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the head branch (not the merge commit) so CI Medic can
+      # reproduce failures and, when auto_fix is on, commit to a real branch.
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      # No github_token is passed on purpose. The action exchanges the OIDC
+      # token for a Factory Droid App token, and pushes made with an app token
+      # start a new CI run. A push made with secrets.GITHUB_TOKEN does not,
+      # so an auto-fix commit would otherwise sit under stale failing checks.
+      - name: Run CI Medic
+        uses: Factory-AI/droid-action@v1
+        with:
+          factory_api_key: ${{ secrets.FACTORY_API_KEY }}
+          ci_medic: "true"
+          auto_fix: "false"
+          retry_mode: smart
