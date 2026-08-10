@@ -4,7 +4,11 @@ import type { WorkflowRunEvent } from "@octokit/webhooks-types";
 import type { AutomationContext } from "../github/context";
 import type { Octokits } from "../github/api/client";
 import { prepareMcpTools } from "../mcp/install-mcp-server";
-import { loadMedicConfig, MedicConfigError } from "./config";
+import {
+  loadMedicConfig,
+  MedicConfigError,
+  type MedicConfigOverride,
+} from "./config";
 import {
   failedChecksForCommit,
   isTrustedRun,
@@ -101,6 +105,56 @@ export function medicAllowedTools(fixEnabled: boolean): string[] {
 
 export const MEDIC_ALLOWED_TOOLS = medicAllowedTools(true);
 
+type MedicActionInputs = {
+  instructions?: string;
+  retryMode?: "off" | "always" | "smart";
+  maxRetries?: number;
+  autoFix?: boolean;
+  maxFixAttempts?: number;
+  maxRunsPerPr?: number;
+};
+
+// Translates workflow action inputs into a MedicConfigOverride. Only keys the
+// workflow actually set are sent — spelling out the whole nested object made
+// an unrelated input such as auto_fix silently replace repository-configured
+// protected_paths and scope with defaults.
+//
+// The retry gate uses `(value ?? default) !== default` rather than
+// `value && value !== default` so that an explicit 0 is treated as an
+// override, not as "unset". With `&&`, `MAX_RETRIES=0` was falsy and the
+// override was silently dropped, leaving the default of 1 retry in place.
+export function buildActionConfig(
+  inputs: MedicActionInputs,
+): MedicConfigOverride {
+  return {
+    ...(inputs.instructions && { instructions: inputs.instructions }),
+    ...((inputs.retryMode ?? "smart") !== "smart" ||
+    (inputs.maxRetries ?? 1) !== 1
+      ? {
+          retry: {
+            ...(inputs.retryMode && { mode: inputs.retryMode }),
+            ...(inputs.maxRetries !== undefined && {
+              max_per_job: inputs.maxRetries,
+            }),
+          },
+        }
+      : {}),
+    ...(inputs.autoFix
+      ? {
+          fix: {
+            enabled: true,
+            ...(inputs.maxFixAttempts !== undefined && {
+              max_attempts: inputs.maxFixAttempts,
+            }),
+          },
+        }
+      : {}),
+    ...((inputs.maxRunsPerPr ?? 10) !== 10
+      ? { max_runs_per_pr: inputs.maxRunsPerPr }
+      : {}),
+  };
+}
+
 export async function prepareMedicMode(
   context: AutomationContext,
   octokit: Octokits,
@@ -119,40 +173,7 @@ export async function prepareMedicMode(
     return skippedResult("fork_pull_request");
   }
 
-  const actionConfig = {
-    ...(context.inputs.instructions && {
-      instructions: context.inputs.instructions,
-    }),
-    // Only keys the workflow actually set are sent. Spelling out the whole
-    // nested object here made an unrelated input such as auto_fix silently
-    // replace repository-configured protected_paths and scope with defaults.
-    ...((context.inputs.retryMode && context.inputs.retryMode !== "smart") ||
-    (context.inputs.maxRetries && context.inputs.maxRetries !== 1)
-      ? {
-          retry: {
-            ...(context.inputs.retryMode && {
-              mode: context.inputs.retryMode,
-            }),
-            ...(context.inputs.maxRetries !== undefined && {
-              max_per_job: context.inputs.maxRetries,
-            }),
-          },
-        }
-      : {}),
-    ...(context.inputs.autoFix
-      ? {
-          fix: {
-            enabled: true,
-            ...(context.inputs.maxFixAttempts !== undefined && {
-              max_attempts: context.inputs.maxFixAttempts,
-            }),
-          },
-        }
-      : {}),
-    ...(context.inputs.maxRunsPerPr && context.inputs.maxRunsPerPr !== 10
-      ? { max_runs_per_pr: context.inputs.maxRunsPerPr }
-      : {}),
-  };
+  const actionConfig = buildActionConfig(context.inputs);
   // Read from the default branch, never from the pull request. Loading it
   // from the head branch let a pull request grant itself auto-fix, empty its
   // own protected paths and skip rules, and write arbitrary text straight into

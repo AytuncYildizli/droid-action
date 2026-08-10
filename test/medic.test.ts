@@ -10,6 +10,7 @@ import {
 import { prepareMcpTools } from "../src/mcp/install-mcp-server";
 import {
   MEDIC_ALLOWED_TOOLS,
+  buildActionConfig,
   medicAllowedTools,
   medicRunCount,
   medicRunSha,
@@ -518,6 +519,28 @@ describe("CI Medic config loading", () => {
       {},
     );
     expect(config).toEqual(defaultMedicConfig());
+  });
+});
+
+describe("CI Medic action config", () => {
+  test("treats maxRetries=0 as an explicit override, not unset", () => {
+    const config = buildActionConfig({ maxRetries: 0 });
+    expect(config.retry).toEqual({ max_per_job: 0 });
+  });
+
+  test("does not install a retry override for the default maxRetries", () => {
+    const config = buildActionConfig({ maxRetries: 1 });
+    expect(config.retry).toBeUndefined();
+  });
+
+  test("does not install a retry override when maxRetries is absent", () => {
+    const config = buildActionConfig({});
+    expect(config.retry).toBeUndefined();
+  });
+
+  test("installs a retry override for retryMode off", () => {
+    const config = buildActionConfig({ retryMode: "off" });
+    expect(config.retry).toEqual({ mode: "off" });
   });
 });
 
