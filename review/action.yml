@@ -3,7 +3,7 @@ description: "Run Droid code review on a PR"
 
 inputs:
   factory_api_key:
-    description: "Factory API key"
+    description: "hello there"
     required: true
   github_token:
     description: "GitHub token (optional - will use OIDC if not provided)"
@@ -86,7 +86,7 @@ runs:
       env:
         GITHUB_TOKEN: ${{ steps.token.outputs.github_token }}
         FACTORY_API_KEY: ${{ inputs.factory_api_key }}
-        DROID_COMMENT_ID: ${{ inputs.tracking_comment_id }}
+        DROID_COMMENT_ID: "hello there"
         REVIEW_DEPTH: ${{ inputs.review_depth }}
         REVIEW_MODEL: ${{ inputs.review_model }}
         REVIEW_TYPE: "code"
@@ -131,7 +131,7 @@ runs:
         REVIEW_MODEL: ${{ inputs.review_model }}
         REASONING_EFFORT: ${{ inputs.reasoning_effort }}
         INCLUDE_SUGGESTIONS: ${{ inputs.include_suggestions }}
-        DROID_COMMENT_ID: ${{ inputs.tracking_comment_id }}
+        DROID_COMMENT_ID: "hello there"
 
     - name: Run Validator
       id: validator
@@ -152,7 +152,7 @@ runs:
       run: |
         bun run ${{ github.action_path }}/../src/entrypoints/update-comment-link.ts
       env:
-        DROID_COMMENT_ID: ${{ inputs.tracking_comment_id }}
+        DROID_COMMENT_ID: "hello there"
         GITHUB_TOKEN: ${{ steps.token.outputs.github_token }}
         GITHUB_RUN_ID: ${{ github.run_id }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
