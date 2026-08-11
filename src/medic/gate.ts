@@ -171,6 +171,33 @@ export async function failedChecksForCommit(
   return checks;
 }
 
+// Auto-fix must repair a regression introduced by the pull request, not a
+// failure inherited from its base. A workflow that did not pass on the base
+// commit is already broken before this pull request and is diagnosis-only.
+// Fail closed when the base run cannot be found.
+export async function workflowsPassedOnCommit(
+  octokit: Octokits,
+  owner: string,
+  repo: string,
+  sha: string,
+  workflowNames: string[],
+): Promise<boolean> {
+  const uniqueNames = [...new Set(workflowNames.filter(Boolean))];
+  if (uniqueNames.length === 0) return true;
+
+  const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({
+    owner,
+    repo,
+    head_sha: sha,
+    per_page: 100,
+  });
+  return uniqueNames.every((name) =>
+    data.workflow_runs.some(
+      (run) => run.name === name && run.conclusion === "success",
+    ),
+  );
+}
+
 export async function waitForChecksToFinish(
   octokit: Octokits,
   owner: string,

@@ -6,6 +6,7 @@ import {
   shouldProcessWorkflow,
   shouldSkipPullRequest,
   waitForChecksToFinish,
+  workflowsPassedOnCommit,
 } from "../src/medic/gate";
 import { prepareMcpTools } from "../src/mcp/install-mcp-server";
 import {
@@ -287,6 +288,52 @@ describe("CI Medic trust boundary", () => {
     expect(isTrustedRun({ workflow_run: {} } as any, "owner", "repo")).toBe(
       false,
     );
+  });
+});
+
+describe("CI Medic base commit gate", () => {
+  const runs = (workflowRuns: { name: string; conclusion: string }[]) =>
+    ({
+      rest: {
+        actions: {
+          listWorkflowRunsForRepo: async () => ({
+            data: { workflow_runs: workflowRuns },
+          }),
+        },
+      },
+    }) as any;
+
+  test("allows a fix only when every failing workflow passed on the base", async () => {
+    await expect(
+      workflowsPassedOnCommit(
+        runs([
+          { name: "Tests", conclusion: "success" },
+          { name: "Typecheck", conclusion: "success" },
+        ]),
+        "owner",
+        "repo",
+        "base-sha",
+        ["Tests", "Typecheck"],
+      ),
+    ).resolves.toBe(true);
+  });
+
+  test("withholds a fix when a failing workflow already failed on the base", async () => {
+    await expect(
+      workflowsPassedOnCommit(
+        runs([{ name: "Tests", conclusion: "failure" }]),
+        "owner",
+        "repo",
+        "base-sha",
+        ["Tests"],
+      ),
+    ).resolves.toBe(false);
+  });
+
+  test("withholds a fix when the base has no matching workflow run", async () => {
+    await expect(
+      workflowsPassedOnCommit(runs([]), "owner", "repo", "base-sha", ["Tests"]),
+    ).resolves.toBe(false);
   });
 });
 
