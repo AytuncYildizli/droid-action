@@ -199,7 +199,7 @@ export async function workflowsPassedOnCommit(
 }
 
 const SYSTEMIC_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1_000;
-const SYSTEMIC_FAILURE_PR_THRESHOLD = 2;
+const SYSTEMIC_FAILURE_PR_THRESHOLD = 5;
 
 // A workflow that fails on several other recent pull requests is more likely
 // to be a shared dependency, runner, or repository problem than a regression
