@@ -223,7 +223,9 @@ export async function hasSystemicWorkflowFailure(
     status: "completed",
     per_page: 100,
   });
-  const cutoff = now.getTime() - SYSTEMIC_FAILURE_WINDOW_MS;
+  const cutoff = new Date(
+    now.getTime() - SYSTEMIC_FAILURE_WINDOW_MS,
+  ).toISOString();
   const failuresByWorkflow = new Map<string, Set<number>>();
 
   for (const run of data.workflow_runs) {
@@ -232,7 +234,7 @@ export async function hasSystemicWorkflowFailure(
       !uniqueNames.has(run.name) ||
       run.head_sha === currentHeadSha ||
       (run.conclusion !== "failure" && run.conclusion !== "timed_out") ||
-      Date.parse(run.created_at) < cutoff
+      run.created_at < cutoff
     ) {
       continue;
     }

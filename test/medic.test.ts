@@ -356,21 +356,25 @@ describe("CI Medic systemic failure gate", () => {
     name: "Tests",
     head_sha: `sha-${pullNumber}`,
     conclusion: "failure",
-    created_at: "2026-08-11T12:00:00Z",
+    created_at: new Date(Date.now() - 60_000).toISOString(),
     pull_requests: [{ number: pullNumber }],
     ...overrides,
   });
-  const now = new Date("2026-08-11T13:00:00Z");
 
-  test("withholds a fix when the same workflow fails on two other PRs", async () => {
+  test("withholds a fix when the same workflow fails on five other PRs", async () => {
     await expect(
       hasSystemicWorkflowFailure(
-        runs([failedRun(2), failedRun(3)]),
+        runs([
+          failedRun(2),
+          failedRun(3),
+          failedRun(4),
+          failedRun(5),
+          failedRun(6),
+        ]),
         "owner",
         "repo",
         "current-sha",
         ["Tests"],
-        now,
       ),
     ).resolves.toBe(true);
   });
@@ -383,7 +387,6 @@ describe("CI Medic systemic failure gate", () => {
         "repo",
         "current-sha",
         ["Tests"],
-        now,
       ),
     ).resolves.toBe(false);
   });
@@ -392,14 +395,15 @@ describe("CI Medic systemic failure gate", () => {
     await expect(
       hasSystemicWorkflowFailure(
         runs([
-          failedRun(2, { created_at: "2026-08-09T12:00:00Z" }),
+          failedRun(2, {
+            created_at: new Date(Date.now() - 25 * 60 * 60_000).toISOString(),
+          }),
           failedRun(3, { head_sha: "current-sha" }),
         ]),
         "owner",
         "repo",
         "current-sha",
         ["Tests"],
-        now,
       ),
     ).resolves.toBe(false);
   });
