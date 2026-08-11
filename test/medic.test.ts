@@ -2,10 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { defaultMedicConfig, loadMedicConfig } from "../src/medic/config";
 import {
   isTrustedRun,
+  hasSystemicWorkflowFailure,
   resolvePullRequest,
   shouldProcessWorkflow,
   shouldSkipPullRequest,
   waitForChecksToFinish,
+  workflowsPassedOnCommit,
 } from "../src/medic/gate";
 import { prepareMcpTools } from "../src/mcp/install-mcp-server";
 import {
@@ -287,6 +289,123 @@ describe("CI Medic trust boundary", () => {
     expect(isTrustedRun({ workflow_run: {} } as any, "owner", "repo")).toBe(
       false,
     );
+  });
+});
+
+describe("CI Medic base commit gate", () => {
+  const runs = (workflowRuns: { name: string; conclusion: string }[]) =>
+    ({
+      rest: {
+        actions: {
+          listWorkflowRunsForRepo: async () => ({
+            data: { workflow_runs: workflowRuns },
+          }),
+        },
+      },
+    }) as any;
+
+  test("allows a fix only when every failing workflow passed on the base", async () => {
+    await expect(
+      workflowsPassedOnCommit(
+        runs([
+          { name: "Tests", conclusion: "success" },
+          { name: "Typecheck", conclusion: "success" },
+        ]),
+        "owner",
+        "repo",
+        "base-sha",
+        ["Tests", "Typecheck"],
+      ),
+    ).resolves.toBe(true);
+  });
+
+  test("withholds a fix when a failing workflow already failed on the base", async () => {
+    await expect(
+      workflowsPassedOnCommit(
+        runs([{ name: "Tests", conclusion: "failure" }]),
+        "owner",
+        "repo",
+        "base-sha",
+        ["Tests"],
+      ),
+    ).resolves.toBe(false);
+  });
+
+  test("withholds a fix when the base has no matching workflow run", async () => {
+    await expect(
+      workflowsPassedOnCommit(runs([]), "owner", "repo", "base-sha", ["Tests"]),
+    ).resolves.toBe(false);
+  });
+});
+
+describe("CI Medic systemic failure gate", () => {
+  const runs = (workflowRuns: unknown[]) =>
+    ({
+      rest: {
+        actions: {
+          listWorkflowRunsForRepo: async () => ({
+            data: { workflow_runs: workflowRuns },
+          }),
+        },
+      },
+    }) as any;
+  const failedRun = (
+    pullNumber: number,
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    name: "Tests",
+    head_sha: `sha-${pullNumber}`,
+    conclusion: "failure",
+    created_at: new Date(Date.now() - 60_000).toISOString(),
+    pull_requests: [{ number: pullNumber }],
+    ...overrides,
+  });
+
+  test("withholds a fix when the same workflow fails on five other PRs", async () => {
+    await expect(
+      hasSystemicWorkflowFailure(
+        runs([
+          failedRun(2),
+          failedRun(3),
+          failedRun(4),
+          failedRun(5),
+          failedRun(6),
+        ]),
+        "owner",
+        "repo",
+        "current-sha",
+        ["Tests"],
+      ),
+    ).resolves.toBe(true);
+  });
+
+  test("does not treat repeated runs for one other PR as systemic", async () => {
+    await expect(
+      hasSystemicWorkflowFailure(
+        runs([failedRun(2), failedRun(2, { head_sha: "rerun-sha" })]),
+        "owner",
+        "repo",
+        "current-sha",
+        ["Tests"],
+      ),
+    ).resolves.toBe(false);
+  });
+
+  test("ignores old failures and the current pull request", async () => {
+    await expect(
+      hasSystemicWorkflowFailure(
+        runs([
+          failedRun(2, {
+            created_at: new Date(Date.now() - 25 * 60 * 60_000).toISOString(),
+          }),
+          failedRun(3, { head_sha: "current-sha" }),
+        ]),
+        "owner",
+        "repo",
+        "current-sha",
+        ["Tests"],
+      ),
+    ).resolves.toBe(false);
   });
 });
 

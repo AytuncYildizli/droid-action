@@ -11,11 +11,13 @@ import {
 } from "./config";
 import {
   failedChecksForCommit,
+  hasSystemicWorkflowFailure,
   isTrustedRun,
   resolvePullRequest,
   shouldProcessWorkflow,
   shouldSkipPullRequest,
   waitForChecksToFinish,
+  workflowsPassedOnCommit,
 } from "./gate";
 import { checksInScope, describeChecks } from "./scope";
 import type { FailedCheck } from "./scope";
@@ -297,6 +299,32 @@ export async function prepareMedicMode(
         fixEnabled = false;
         console.log(
           `CI Medic is diagnosing only: no failing check is within the configured fix scope (${config.fix.scope.join(", ")}). Failing checks: ${describeChecks(failed) || "none found"}.`,
+        );
+      } else if (
+        !(await workflowsPassedOnCommit(
+          octokit,
+          context.repository.owner,
+          context.repository.repo,
+          prData.base.sha,
+          inScope.map((check) => check.workflow),
+        ))
+      ) {
+        fixEnabled = false;
+        console.log(
+          "CI Medic is diagnosing only: an in-scope workflow did not pass on the pull request base commit, so its failure is not attributable to this pull request.",
+        );
+      } else if (
+        await hasSystemicWorkflowFailure(
+          octokit,
+          context.repository.owner,
+          context.repository.repo,
+          pr.headSha,
+          inScope.map((check) => check.workflow),
+        )
+      ) {
+        fixEnabled = false;
+        console.log(
+          "CI Medic is diagnosing only: an in-scope workflow failed on at least two other recent pull requests, so the failure may be systemic.",
         );
       }
     } catch (error) {

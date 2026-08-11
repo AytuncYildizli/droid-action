@@ -171,6 +171,85 @@ export async function failedChecksForCommit(
   return checks;
 }
 
+// Auto-fix must repair a regression introduced by the pull request, not a
+// failure inherited from its base. A workflow that did not pass on the base
+// commit is already broken before this pull request and is diagnosis-only.
+// Fail closed when the base run cannot be found.
+export async function workflowsPassedOnCommit(
+  octokit: Octokits,
+  owner: string,
+  repo: string,
+  sha: string,
+  workflowNames: string[],
+): Promise<boolean> {
+  const uniqueNames = [...new Set(workflowNames.filter(Boolean))];
+  if (uniqueNames.length === 0) return true;
+
+  const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({
+    owner,
+    repo,
+    head_sha: sha,
+    per_page: 100,
+  });
+  return uniqueNames.every((name) =>
+    data.workflow_runs.some(
+      (run) => run.name === name && run.conclusion === "success",
+    ),
+  );
+}
+
+const SYSTEMIC_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1_000;
+const SYSTEMIC_FAILURE_PR_THRESHOLD = 5;
+
+// A workflow that fails on several other recent pull requests is more likely
+// to be a shared dependency, runner, or repository problem than a regression
+// in this pull request. Keep CI Medic diagnosis-only rather than committing
+// the same speculative fix to every affected branch.
+export async function hasSystemicWorkflowFailure(
+  octokit: Octokits,
+  owner: string,
+  repo: string,
+  currentHeadSha: string,
+  workflowNames: string[],
+  now = new Date(),
+): Promise<boolean> {
+  const uniqueNames = new Set(workflowNames.filter(Boolean));
+  if (uniqueNames.size === 0) return false;
+
+  const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({
+    owner,
+    repo,
+    event: "pull_request",
+    status: "completed",
+    per_page: 100,
+  });
+  const cutoff = new Date(
+    now.getTime() - SYSTEMIC_FAILURE_WINDOW_MS,
+  ).toISOString();
+  const failuresByWorkflow = new Map<string, Set<number>>();
+
+  for (const run of data.workflow_runs) {
+    if (
+      !run.name ||
+      !uniqueNames.has(run.name) ||
+      run.head_sha === currentHeadSha ||
+      (run.conclusion !== "failure" && run.conclusion !== "timed_out") ||
+      run.created_at < cutoff
+    ) {
+      continue;
+    }
+    for (const pullRequest of run.pull_requests ?? []) {
+      const failures = failuresByWorkflow.get(run.name) ?? new Set<number>();
+      failures.add(pullRequest.number);
+      failuresByWorkflow.set(run.name, failures);
+    }
+  }
+
+  return [...failuresByWorkflow.values()].some(
+    (failures) => failures.size >= SYSTEMIC_FAILURE_PR_THRESHOLD,
+  );
+}
+
 export async function waitForChecksToFinish(
   octokit: Octokits,
   owner: string,
