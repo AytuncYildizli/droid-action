@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { defaultMedicConfig, loadMedicConfig } from "../src/medic/config";
 import {
   isTrustedRun,
+  hasSystemicWorkflowFailure,
   resolvePullRequest,
   shouldProcessWorkflow,
   shouldSkipPullRequest,
@@ -333,6 +334,73 @@ describe("CI Medic base commit gate", () => {
   test("withholds a fix when the base has no matching workflow run", async () => {
     await expect(
       workflowsPassedOnCommit(runs([]), "owner", "repo", "base-sha", ["Tests"]),
+    ).resolves.toBe(false);
+  });
+});
+
+describe("CI Medic systemic failure gate", () => {
+  const runs = (workflowRuns: unknown[]) =>
+    ({
+      rest: {
+        actions: {
+          listWorkflowRunsForRepo: async () => ({
+            data: { workflow_runs: workflowRuns },
+          }),
+        },
+      },
+    }) as any;
+  const failedRun = (
+    pullNumber: number,
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    name: "Tests",
+    head_sha: `sha-${pullNumber}`,
+    conclusion: "failure",
+    created_at: "2026-08-11T12:00:00Z",
+    pull_requests: [{ number: pullNumber }],
+    ...overrides,
+  });
+  const now = new Date("2026-08-11T13:00:00Z");
+
+  test("withholds a fix when the same workflow fails on two other PRs", async () => {
+    await expect(
+      hasSystemicWorkflowFailure(
+        runs([failedRun(2), failedRun(3)]),
+        "owner",
+        "repo",
+        "current-sha",
+        ["Tests"],
+        now,
+      ),
+    ).resolves.toBe(true);
+  });
+
+  test("does not treat repeated runs for one other PR as systemic", async () => {
+    await expect(
+      hasSystemicWorkflowFailure(
+        runs([failedRun(2), failedRun(2, { head_sha: "rerun-sha" })]),
+        "owner",
+        "repo",
+        "current-sha",
+        ["Tests"],
+        now,
+      ),
+    ).resolves.toBe(false);
+  });
+
+  test("ignores old failures and the current pull request", async () => {
+    await expect(
+      hasSystemicWorkflowFailure(
+        runs([
+          failedRun(2, { created_at: "2026-08-09T12:00:00Z" }),
+          failedRun(3, { head_sha: "current-sha" }),
+        ]),
+        "owner",
+        "repo",
+        "current-sha",
+        ["Tests"],
+        now,
+      ),
     ).resolves.toBe(false);
   });
 });

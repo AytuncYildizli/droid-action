@@ -198,6 +198,56 @@ export async function workflowsPassedOnCommit(
   );
 }
 
+const SYSTEMIC_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1_000;
+const SYSTEMIC_FAILURE_PR_THRESHOLD = 2;
+
+// A workflow that fails on several other recent pull requests is more likely
+// to be a shared dependency, runner, or repository problem than a regression
+// in this pull request. Keep CI Medic diagnosis-only rather than committing
+// the same speculative fix to every affected branch.
+export async function hasSystemicWorkflowFailure(
+  octokit: Octokits,
+  owner: string,
+  repo: string,
+  currentHeadSha: string,
+  workflowNames: string[],
+  now = new Date(),
+): Promise<boolean> {
+  const uniqueNames = new Set(workflowNames.filter(Boolean));
+  if (uniqueNames.size === 0) return false;
+
+  const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({
+    owner,
+    repo,
+    event: "pull_request",
+    status: "completed",
+    per_page: 100,
+  });
+  const cutoff = now.getTime() - SYSTEMIC_FAILURE_WINDOW_MS;
+  const failuresByWorkflow = new Map<string, Set<number>>();
+
+  for (const run of data.workflow_runs) {
+    if (
+      !run.name ||
+      !uniqueNames.has(run.name) ||
+      run.head_sha === currentHeadSha ||
+      (run.conclusion !== "failure" && run.conclusion !== "timed_out") ||
+      Date.parse(run.created_at) < cutoff
+    ) {
+      continue;
+    }
+    for (const pullRequest of run.pull_requests ?? []) {
+      const failures = failuresByWorkflow.get(run.name) ?? new Set<number>();
+      failures.add(pullRequest.number);
+      failuresByWorkflow.set(run.name, failures);
+    }
+  }
+
+  return [...failuresByWorkflow.values()].some(
+    (failures) => failures.size >= SYSTEMIC_FAILURE_PR_THRESHOLD,
+  );
+}
+
 export async function waitForChecksToFinish(
   octokit: Octokits,
   owner: string,
