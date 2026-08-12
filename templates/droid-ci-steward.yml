@@ -13,27 +13,24 @@ permissions:
   pull-requests: write
   id-token: write
 
-# Keyed on the pull request rather than the commit. Two workflows failing on
-# one commit raise two workflow_run events, and separate groups let both spend
-# a run from the budget for the same commit.
-# Runs are serialized per branch rather than cancelled. Concurrency applies to
-# the whole workflow, including runs whose job is skipped by the condition
-# below, so cancel-in-progress would let a passing workflow's skipped run kill
-# an in-flight diagnosis for a failing one.
-concurrency:
-  group: ci-steward-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: false
-
 jobs:
   ci-steward:
-    # Fork pull requests are not processed. workflow_run runs in the base
-    # repository with write-scoped tokens and secrets, so checking out a fork's
-    # commit here and running commands against it would hand a pull request
-    # author the app token, the workflow token, and the Factory API key.
+    # Only process same-repo pull request runs. Watched workflows may also run
+    # on push, and fork pull requests must never reach a checkout here:
+    # workflow_run executes in the base repository with write-scoped tokens
+    # and secrets, so running a fork's commit would hand a pull request author
+    # the app token, the workflow token, and the Factory API key.
     if: >
+      github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.conclusion != 'success' &&
       github.event.workflow_run.conclusion != 'cancelled'
+    # Job-level so skipped events never enter the group. Keyed per pull
+    # request, and runs queue rather than cancel: a cancelled run has already
+    # spent a unit of the budget and can be killed mid-diagnosis or mid-fix.
+    concurrency:
+      group: ci-steward-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       # Check out the head branch (not the merge commit) so CI Steward can
