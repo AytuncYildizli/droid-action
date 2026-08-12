@@ -9,13 +9,13 @@ This GitHub Action powers the Factory **Droid** app. It watches your pull reques
 
 Everything runs inside GitHub Actions using your Factory API key, so the bot never leaves your repository and operates with the permissions you grant.
 
-## CI Medic
+## CI Steward
 
-CI Medic runs after configured workflows complete. It waits for all checks on
+CI Steward runs after configured workflows complete. It waits for all checks on
 the commit, summarizes failed job logs, retries flaky or infrastructure
 failures, and either commits a focused fix or posts inline suggestions.
 
-Copy `templates/droid-ci-medic.yml` to `.github/workflows/ci-medic.yml` and
+Copy `templates/droid-ci-steward.yml` to `.github/workflows/ci-steward.yml` and
 replace the workflow names with the checks you want to monitor. Enable direct
 fixes with `auto_fix: "true"` only when the workflow has `contents: write`.
 
@@ -33,17 +33,17 @@ branch**, never from the pull request, so a branch cannot grant itself
 auto-fix or clear its own protected paths. The budgets have distinct scopes:
 
 - `max_retries` limits reruns of one failed job for one commit.
-- `max_fix_attempts` limits consecutive fix commits from CI Medic.
-- `max_runs_per_pr` limits all CI Medic invocations over the PR lifetime.
+- `max_fix_attempts` limits consecutive fix commits from CI Steward.
+- `max_runs_per_pr` limits all CI Steward invocations over the PR lifetime.
 
 ### Trust boundary
 
-**CI Medic does not run on pull requests from forks.** `workflow_run` executes
+**CI Steward does not run on pull requests from forks.** `workflow_run` executes
 in the base repository with write-scoped tokens and access to secrets, so
 checking out a fork's commit and running commands against it would hand the
 pull request author the app token, the workflow token, and your Factory API
 key. The template enforces this with a job-level condition, and the action
-re-checks it in case CI Medic is wired into a hand-written workflow.
+re-checks it in case CI Steward is wired into a hand-written workflow.
 
 Two further limits follow from the same reasoning:
 

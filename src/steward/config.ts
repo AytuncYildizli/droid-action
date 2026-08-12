@@ -1,7 +1,7 @@
 import { parse as parseYaml } from "yaml";
 import type { Octokits } from "../github/api/client";
 
-export type MedicConfig = {
+export type StewardConfig = {
   instructions: string;
   workflows: { exclude: string[] };
   retry: {
@@ -28,16 +28,16 @@ export type MedicConfig = {
 
 // Callers supply only the keys they mean to change; every absent key keeps the
 // value it already had rather than reverting to a default.
-export type MedicConfigOverride = {
+export type StewardConfigOverride = {
   instructions?: string;
-  workflows?: Partial<MedicConfig["workflows"]>;
-  retry?: Partial<MedicConfig["retry"]>;
-  fix?: Partial<MedicConfig["fix"]>;
-  skip?: Partial<MedicConfig["skip"]>;
+  workflows?: Partial<StewardConfig["workflows"]>;
+  retry?: Partial<StewardConfig["retry"]>;
+  fix?: Partial<StewardConfig["fix"]>;
+  skip?: Partial<StewardConfig["skip"]>;
   max_runs_per_pr?: number;
 };
 
-export const defaultMedicConfig = (): MedicConfig => ({
+export const defaultStewardConfig = (): StewardConfig => ({
   instructions: "",
   workflows: { exclude: [] },
   retry: { mode: "smart", max_per_job: 1, eligible: [], exclude: [] },
@@ -56,17 +56,17 @@ export const defaultMedicConfig = (): MedicConfig => ({
 // silently dropped block sequences and any top-level key following a nested
 // block. Dropping a `protected_paths` list to the default reads as success, so
 // the failure mode was an invisible loss of a safety limit. Parse real YAML.
-function parseConfig(text: string): MedicConfigOverride {
+function parseConfig(text: string): StewardConfigOverride {
   try {
-    return asRecord(parseYaml(text)) as MedicConfigOverride;
+    return asRecord(parseYaml(text)) as StewardConfigOverride;
   } catch {
     // A malformed file must not silently run with defaults, because the
     // defaults may be weaker than what the author wrote.
-    throw new MedicConfigError("configuration file is not valid YAML");
+    throw new StewardConfigError("configuration file is not valid YAML");
   }
 }
 
-export class MedicConfigError extends Error {}
+export class StewardConfigError extends Error {}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -109,9 +109,9 @@ function asString(value: unknown, fallback: string): string {
 // untrusted input, so a malformed value must degrade to the base value rather
 // than leave a nested object undefined for downstream gate checks.
 function mergeConfig(
-  base: MedicConfig,
-  override: MedicConfigOverride,
-): MedicConfig {
+  base: StewardConfig,
+  override: StewardConfigOverride,
+): StewardConfig {
   const source = asRecord(override);
   const workflows = asRecord(source.workflows);
   const retry = asRecord(source.retry);
@@ -153,15 +153,15 @@ function mergeConfig(
   };
 }
 
-export async function loadMedicConfig(
+export async function loadStewardConfig(
   octokit: Octokits,
   owner: string,
   repo: string,
   ref: string | undefined,
   path: string,
-  actionInputs: MedicConfigOverride,
-): Promise<MedicConfig> {
-  let fileConfig: MedicConfigOverride = {};
+  actionInputs: StewardConfigOverride,
+): Promise<StewardConfig> {
+  let fileConfig: StewardConfigOverride = {};
   let raw: string | undefined;
   try {
     const response = await octokit.rest.repos.getContent({
@@ -178,7 +178,7 @@ export async function loadMedicConfig(
   }
   if (raw !== undefined) fileConfig = parseConfig(raw);
   return mergeConfig(
-    mergeConfig(defaultMedicConfig(), fileConfig),
+    mergeConfig(defaultStewardConfig(), fileConfig),
     actionInputs,
   );
 }

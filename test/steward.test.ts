@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { defaultMedicConfig, loadMedicConfig } from "../src/medic/config";
+import { defaultStewardConfig, loadStewardConfig } from "../src/steward/config";
 import {
   isTrustedRun,
   hasSystemicWorkflowFailure,
@@ -8,22 +8,22 @@ import {
   shouldSkipPullRequest,
   waitForChecksToFinish,
   workflowsPassedOnCommit,
-} from "../src/medic/gate";
+} from "../src/steward/gate";
 import { prepareMcpTools } from "../src/mcp/install-mcp-server";
 import {
-  MEDIC_ALLOWED_TOOLS,
+  STEWARD_ALLOWED_TOOLS,
   buildActionConfig,
-  medicAllowedTools,
-  medicRunCount,
-  medicRunSha,
+  stewardAllowedTools,
+  stewardRunCount,
+  stewardRunSha,
   isCommitAlreadyProcessed,
-} from "../src/medic/index";
-import { protectedViolations } from "../src/medic/postrun";
+} from "../src/steward/index";
+import { protectedViolations } from "../src/steward/postrun";
 import {
   checkCategories,
   checkMatchesScope,
   checksInScope,
-} from "../src/medic/scope";
+} from "../src/steward/scope";
 
 const octokitWithConfig = (body: string) =>
   ({
@@ -37,7 +37,7 @@ const octokitWithConfig = (body: string) =>
   }) as any;
 
 const load = (body: string, inputs = {}) =>
-  loadMedicConfig(
+  loadStewardConfig(
     octokitWithConfig(body),
     "owner",
     "repo",
@@ -46,9 +46,9 @@ const load = (body: string, inputs = {}) =>
     inputs,
   );
 
-describe("CI Medic gates", () => {
+describe("CI Steward gates", () => {
   test("only processes failed or timed out workflows", () => {
-    const config = defaultMedicConfig();
+    const config = defaultStewardConfig();
     const event = {
       workflow_run: { name: "CI", conclusion: "failure" },
     } as any;
@@ -58,7 +58,7 @@ describe("CI Medic gates", () => {
   });
 
   test("honors workflow exclusions", () => {
-    const config = defaultMedicConfig();
+    const config = defaultStewardConfig();
     config.workflows.exclude = ["Deploy *"];
     expect(
       shouldProcessWorkflow(
@@ -71,7 +71,7 @@ describe("CI Medic gates", () => {
   });
 
   test("skips configured draft, label, branch, and author cases", () => {
-    const config = defaultMedicConfig();
+    const config = defaultStewardConfig();
     expect(
       shouldSkipPullRequest(
         {
@@ -92,7 +92,7 @@ describe("CI Medic gates", () => {
   });
 });
 
-describe("CI Medic MCP wiring", () => {
+describe("CI Steward MCP wiring", () => {
   const previousEnv = { ...process.env };
 
   afterEach(() => {
@@ -100,10 +100,10 @@ describe("CI Medic MCP wiring", () => {
   });
 
   // A workflow_run payload is not an entity context, so every server gated on
-  // isEntityContext has to fall back to MEDIC_PR_NUMBER. When one does not, the
+  // isEntityContext has to fall back to STEWARD_PR_NUMBER. When one does not, the
   // CLI aborts the run with "Unknown tool identifier(s)" for its tools.
-  test("installs a server for every namespaced tool CI Medic allows", async () => {
-    process.env.MEDIC_PR_NUMBER = "42";
+  test("installs a server for every namespaced tool CI Steward allows", async () => {
+    process.env.STEWARD_PR_NUMBER = "42";
     process.env.DEFAULT_WORKFLOW_TOKEN = "workflow-token";
 
     const config = JSON.parse(
@@ -112,7 +112,7 @@ describe("CI Medic MCP wiring", () => {
         owner: "owner",
         repo: "repo",
         droidCommentId: "1",
-        allowedTools: MEDIC_ALLOWED_TOOLS,
+        allowedTools: STEWARD_ALLOWED_TOOLS,
         mode: "tag",
         context: {
           eventName: "workflow_run",
@@ -124,7 +124,7 @@ describe("CI Medic MCP wiring", () => {
     const installed = Object.keys(config.mcpServers ?? {});
     const required = [
       ...new Set(
-        MEDIC_ALLOWED_TOOLS.filter((tool) => tool.includes("___")).map(
+        STEWARD_ALLOWED_TOOLS.filter((tool) => tool.includes("___")).map(
           (tool) => tool.split("___")[0]!,
         ),
       ),
@@ -140,9 +140,9 @@ describe("CI Medic MCP wiring", () => {
   // as an unquoted shell string, so a value holding a space or a shell
   // metacharacter breaks registration and aborts the whole run.
   test("keeps every MCP env value safe for an unquoted shell argument", async () => {
-    process.env.MEDIC_PR_NUMBER = "42";
-    process.env.MEDIC_RUN_ID = "31044951094";
-    process.env.MEDIC_RUN_COUNT = "1";
+    process.env.STEWARD_PR_NUMBER = "42";
+    process.env.STEWARD_RUN_ID = "31044951094";
+    process.env.STEWARD_RUN_COUNT = "1";
     process.env.DEFAULT_WORKFLOW_TOKEN = "workflow-token";
 
     const config = JSON.parse(
@@ -151,7 +151,7 @@ describe("CI Medic MCP wiring", () => {
         owner: "owner",
         repo: "repo",
         droidCommentId: "1",
-        allowedTools: MEDIC_ALLOWED_TOOLS,
+        allowedTools: STEWARD_ALLOWED_TOOLS,
         mode: "tag",
         context: {
           eventName: "workflow_run",
@@ -167,8 +167,8 @@ describe("CI Medic MCP wiring", () => {
     }
   });
 
-  test("passes the medic pull request number to the inline comment server", async () => {
-    process.env.MEDIC_PR_NUMBER = "42";
+  test("passes the steward pull request number to the inline comment server", async () => {
+    process.env.STEWARD_PR_NUMBER = "42";
     process.env.DEFAULT_WORKFLOW_TOKEN = "workflow-token";
 
     const config = JSON.parse(
@@ -177,7 +177,7 @@ describe("CI Medic MCP wiring", () => {
         owner: "owner",
         repo: "repo",
         droidCommentId: "1",
-        allowedTools: MEDIC_ALLOWED_TOOLS,
+        allowedTools: STEWARD_ALLOWED_TOOLS,
         mode: "tag",
         context: {
           eventName: "workflow_run",
@@ -190,40 +190,40 @@ describe("CI Medic MCP wiring", () => {
   });
 });
 
-describe("CI Medic run budget", () => {
+describe("CI Steward run budget", () => {
   const bot = { id: 209825114, type: "Bot" };
   const human = { id: 5, type: "User" };
   const markerFor = (count: number) =>
-    `## CI Medic\n\ndiagnosis text\n\n<!-- ci-medic:run=99 count=${count} -->`;
+    `## CI Steward\n\ndiagnosis text\n\n<!-- ci-steward:run=99 count=${count} -->`;
 
   // The count has to live in the marker, not in the number of marker comments:
   // Droid rewrites the tracking comment body on every run.
   test("reads the lifetime count from the surviving marker", () => {
     expect(
-      medicRunCount([
+      stewardRunCount([
         { body: "unrelated", user: human },
         { body: markerFor(3), user: bot },
       ]),
     ).toBe(3);
   });
 
-  test("treats a pull request with no medic history as zero runs", () => {
-    expect(medicRunCount([{ body: "some human comment", user: human }])).toBe(
+  test("treats a pull request with no steward history as zero runs", () => {
+    expect(stewardRunCount([{ body: "some human comment", user: human }])).toBe(
       0,
     );
   });
 
   test("does not undercount when Droid has rewritten the body around the marker", () => {
-    const rewritten = `## CI Medic\n\n**Diagnosis: real code failure.**\n\nlots of new content\n\n<!-- ci-medic:run=12345 count=7 -->`;
-    expect(medicRunCount([{ body: rewritten, user: bot }])).toBe(7);
+    const rewritten = `## CI Steward\n\n**Diagnosis: real code failure.**\n\nlots of new content\n\n<!-- ci-steward:run=12345 count=7 -->`;
+    expect(stewardRunCount([{ body: rewritten, user: bot }])).toBe(7);
   });
 
   // Anyone can comment on a pull request, so honouring a marker regardless of
   // author let a contributor pin the count at zero for unlimited paid runs.
   test("ignores a marker planted by a non-bot commenter", () => {
     expect(
-      medicRunCount([
-        { body: "<!-- ci-medic:run=1 count=0 -->", user: human },
+      stewardRunCount([
+        { body: "<!-- ci-steward:run=1 count=0 -->", user: human },
         { body: markerFor(4), user: bot },
       ]),
     ).toBe(4);
@@ -232,21 +232,21 @@ describe("CI Medic run budget", () => {
   // Each watched workflow that fails raises its own event for one commit, and
   // every one of them used to pay for a full analysis of the same information.
   test("records the analyzed commit alongside the count", () => {
-    const body = `## CI Medic\n\ndiagnosis\n\n<!-- ci-medic:run=99 count=2 sha=abc1234def -->`;
-    expect(medicRunCount([{ body, user: bot }])).toBe(2);
-    expect(medicRunSha([{ body, user: bot }])).toBe("abc1234def");
+    const body = `## CI Steward\n\ndiagnosis\n\n<!-- ci-steward:run=99 count=2 sha=abc1234def -->`;
+    expect(stewardRunCount([{ body, user: bot }])).toBe(2);
+    expect(stewardRunSha([{ body, user: bot }])).toBe("abc1234def");
   });
 
   test("reads a marker written before commits were recorded", () => {
     const legacy = [{ body: markerFor(3), user: bot }];
-    expect(medicRunCount(legacy)).toBe(3);
-    expect(medicRunSha(legacy)).toBeUndefined();
+    expect(stewardRunCount(legacy)).toBe(3);
+    expect(stewardRunSha(legacy)).toBeUndefined();
   });
 
   test("ignores a human marker even when no genuine marker exists", () => {
     expect(
-      medicRunCount([
-        { body: "<!-- ci-medic:run=1 count=999 -->", user: human },
+      stewardRunCount([
+        { body: "<!-- ci-steward:run=1 count=999 -->", user: human },
       ]),
     ).toBe(0);
   });
@@ -269,7 +269,7 @@ describe("CI Medic run budget", () => {
   });
 });
 
-describe("CI Medic trust boundary", () => {
+describe("CI Steward trust boundary", () => {
   const forkEvent = (fullName: string) =>
     ({
       workflow_run: { head_repository: { full_name: fullName } },
@@ -292,7 +292,7 @@ describe("CI Medic trust boundary", () => {
   });
 });
 
-describe("CI Medic base commit gate", () => {
+describe("CI Steward base commit gate", () => {
   const runs = (workflowRuns: { name: string; conclusion: string }[]) =>
     ({
       rest: {
@@ -338,7 +338,7 @@ describe("CI Medic base commit gate", () => {
   });
 });
 
-describe("CI Medic systemic failure gate", () => {
+describe("CI Steward systemic failure gate", () => {
   const runs = (workflowRuns: unknown[]) =>
     ({
       rest: {
@@ -409,7 +409,7 @@ describe("CI Medic systemic failure gate", () => {
   });
 });
 
-describe("CI Medic pull request resolution", () => {
+describe("CI Steward pull request resolution", () => {
   const listing = (prs: unknown[]) =>
     ({
       rest: { pulls: { list: async () => ({ data: prs }) } },
@@ -476,11 +476,11 @@ describe("CI Medic pull request resolution", () => {
   });
 });
 
-describe("CI Medic tool exposure", () => {
+describe("CI Steward tool exposure", () => {
   // Job logs are attacker-influenced and permission prompts are disabled, so a
   // diagnosis-only run must not be able to write files or run commands.
   test("withholds the shell and file writers when fixes are disabled", () => {
-    const tools = medicAllowedTools(false);
+    const tools = stewardAllowedTools(false);
     for (const tool of ["Execute", "Edit", "Create", "ApplyPatch"]) {
       expect(tools).not.toContain(tool);
     }
@@ -488,11 +488,11 @@ describe("CI Medic tool exposure", () => {
   });
 
   test("grants them once the repository has asked for fixes", () => {
-    expect(medicAllowedTools(true)).toContain("Execute");
+    expect(stewardAllowedTools(true)).toContain("Execute");
   });
 });
 
-describe("CI Medic protected paths", () => {
+describe("CI Steward protected paths", () => {
   const patterns = [".github/workflows/**", "infra/**"];
 
   test("flags a change to a protected path", () => {
@@ -510,7 +510,7 @@ describe("CI Medic protected paths", () => {
   });
 });
 
-describe("CI Medic check waiting", () => {
+describe("CI Steward check waiting", () => {
   // A check can stay queued forever, and this loop holds a job that carries
   // the app token, the workflow token, and the Factory API key.
   test("gives up instead of polling until the job is killed", async () => {
@@ -535,7 +535,7 @@ describe("CI Medic check waiting", () => {
   });
 });
 
-describe("CI Medic config loading", () => {
+describe("CI Steward config loading", () => {
   test("parses block-style nested config", async () => {
     const config = await load(
       ["workflows:", '  exclude: ["Deploy *"]', "retry:", "  mode: off"].join(
@@ -629,7 +629,7 @@ describe("CI Medic config loading", () => {
         },
       },
     } as any;
-    const config = await loadMedicConfig(
+    const config = await loadStewardConfig(
       octokit,
       "owner",
       "repo",
@@ -637,11 +637,11 @@ describe("CI Medic config loading", () => {
       ".github/droid-ci.yml",
       {},
     );
-    expect(config).toEqual(defaultMedicConfig());
+    expect(config).toEqual(defaultStewardConfig());
   });
 });
 
-describe("CI Medic action config", () => {
+describe("CI Steward action config", () => {
   test("treats maxRetries=0 as an explicit override, not unset", () => {
     const config = buildActionConfig({ maxRetries: 0 });
     expect(config.retry).toEqual({ max_per_job: 0 });
@@ -663,7 +663,7 @@ describe("CI Medic action config", () => {
   });
 });
 
-describe("CI Medic fix scope", () => {
+describe("CI Steward fix scope", () => {
   const check = (job: string, ...steps: string[]) => ({
     workflow: "CI",
     job,
@@ -726,7 +726,7 @@ describe("CI Medic fix scope", () => {
   });
 });
 
-describe("CI Medic fix scope, step names", () => {
+describe("CI Steward fix scope, step names", () => {
   const check = (job: string, ...steps: string[]) => ({
     workflow: "CI",
     job,

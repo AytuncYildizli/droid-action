@@ -84,16 +84,16 @@ export async function prepareMcpTools(
       tool.startsWith("github_pr___"),
     );
 
-    // CI Medic runs on workflow_run, which is not an entity context, so the
+    // CI Steward runs on workflow_run, which is not an entity context, so the
     // pull request it is acting on arrives through the environment instead.
-    const medicPrNumber = process.env.MEDIC_PR_NUMBER;
+    const stewardPrNumber = process.env.STEWARD_PR_NUMBER;
     const isPullRequestRun =
-      (isEntityContext(context) && context.isPR) || Boolean(medicPrNumber);
+      (isEntityContext(context) && context.isPR) || Boolean(stewardPrNumber);
     const pullRequestNumber =
       (isEntityContext(context) && context.isPR
         ? context.entityNumber?.toString()
         : undefined) ||
-      medicPrNumber ||
+      stewardPrNumber ||
       "";
 
     const baseMcpTools: { mcpServers: Record<string, unknown> } = {
@@ -108,15 +108,15 @@ export async function prepareMcpTools(
         REPO_OWNER: owner,
         REPO_NAME: repo,
         ...(droidCommentId && { DROID_COMMENT_ID: droidCommentId }),
-        ...(medicPrNumber && { MEDIC_PR_NUMBER: medicPrNumber }),
-        ...(process.env.MEDIC_RUN_ID && {
-          MEDIC_RUN_ID: process.env.MEDIC_RUN_ID,
+        ...(stewardPrNumber && { STEWARD_PR_NUMBER: stewardPrNumber }),
+        ...(process.env.STEWARD_RUN_ID && {
+          STEWARD_RUN_ID: process.env.STEWARD_RUN_ID,
         }),
-        ...(process.env.MEDIC_RUN_COUNT && {
-          MEDIC_RUN_COUNT: process.env.MEDIC_RUN_COUNT,
+        ...(process.env.STEWARD_RUN_COUNT && {
+          STEWARD_RUN_COUNT: process.env.STEWARD_RUN_COUNT,
         }),
-        ...(process.env.MEDIC_RUN_SHA && {
-          MEDIC_RUN_SHA: process.env.MEDIC_RUN_SHA,
+        ...(process.env.STEWARD_RUN_SHA && {
+          STEWARD_RUN_SHA: process.env.STEWARD_RUN_SHA,
         }),
         GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
         GITHUB_API_URL: GITHUB_API_URL,

@@ -2,17 +2,17 @@
 
 /**
  * Builds a sandbox repository and a fleet of pull requests that each exercise
- * one CI Medic code path end to end.
+ * one CI Steward code path end to end.
  *
  * `workflow_run` semantics cannot be simulated locally: the triggering workflow
  * definition is read from the default branch, reruns go through the Actions
- * API, and the medic runs in base-repo context. This script provisions a real
+ * API, and the steward runs in base-repo context. This script provisions a real
  * repository so those paths get exercised for real.
  *
  * Usage:
- *   bun run scripts/ci-medic-sandbox.ts --repo owner/name --droid-ref my-branch
- *   bun run scripts/ci-medic-sandbox.ts --repo owner/name --droid-ref my-branch --apply
- *   bun run scripts/ci-medic-sandbox.ts --repo owner/name --watch
+ *   bun run scripts/ci-steward-sandbox.ts --repo owner/name --droid-ref my-branch
+ *   bun run scripts/ci-steward-sandbox.ts --repo owner/name --droid-ref my-branch --apply
+ *   bun run scripts/ci-steward-sandbox.ts --repo owner/name --watch
  *
  * Nothing mutates unless --apply is passed.
  */
@@ -23,8 +23,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 type Assertion =
-  | "medic-comment"
-  | "no-medic-comment"
+  | "steward-comment"
+  | "no-steward-comment"
   | "fix-commit"
   | "budget-exhausted";
 
@@ -141,7 +141,7 @@ echo "${label}: ok"
 `;
 
 // GITHUB_RUN_ATTEMPT makes the flake deterministic: red on the first attempt,
-// green once CI Medic reruns the job. Without this a retry test is a coin flip.
+// green once CI Steward reruns the job. Without this a retry test is a coin flip.
 const FLAKY_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
 if [ "\${GITHUB_RUN_ATTEMPT:-1}" = "1" ]; then
@@ -161,7 +161,7 @@ const INFRA_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
 if [ "\${GITHUB_RUN_ATTEMPT:-1}" = "1" ]; then
   echo "Downloading build cache..."
-  curl --max-time 5 -fsS https://cache.invalid-host-for-ci-medic.test/bundle.tar.gz
+  curl --max-time 5 -fsS https://cache.invalid-host-for-ci-steward.test/bundle.tar.gz
 fi
 echo "infra: ok"
 `;
@@ -173,7 +173,7 @@ exit 1
 `;
 
 const PACKAGE_JSON = `{
-  "name": "ci-medic-sandbox",
+  "name": "ci-steward-sandbox",
   "private": true,
   "scripts": {
     "test": "bun test",
@@ -186,7 +186,7 @@ const PACKAGE_JSON = `{
 // Drops the "typecheck" script the CI workflow still calls, which surfaces as a
 // configuration failure rather than a code failure.
 const PACKAGE_JSON_MISSING_SCRIPT = `{
-  "name": "ci-medic-sandbox",
+  "name": "ci-steward-sandbox",
   "private": true,
   "scripts": {
     "test": "bun test",
@@ -197,7 +197,7 @@ const PACKAGE_JSON_MISSING_SCRIPT = `{
 
 const AGENTS_MD = `# AGENTS.md
 
-Sandbox project used to exercise CI Medic.
+Sandbox project used to exercise CI Steward.
 
 - Runtime: Bun 1.2.11, no dependencies to install.
 - Run the unit tests with \`bun test\`.
@@ -300,11 +300,11 @@ max_runs_per_pr: 10
 `;
 
 /**
- * One medic workflow serves every scenario. Config normally comes from the
+ * One steward workflow serves every scenario. Config normally comes from the
  * default branch, which cannot vary per pull request, so the per-scenario
  * inputs are derived from the head branch prefix instead.
  */
-const medicWorkflow = (droidRef: string) => `name: CI Medic
+const stewardWorkflow = (droidRef: string) => `name: CI Steward
 
 on:
   workflow_run:
@@ -318,11 +318,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: ci-medic-\${{ github.event.workflow_run.head_branch }}
+  group: ci-steward-\${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
-  ci-medic:
+  ci-steward:
     if: >
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.conclusion != 'success' &&
@@ -335,11 +335,11 @@ jobs:
           ref: \${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
 
-      - name: Run CI Medic
+      - name: Run CI Steward
         uses: Factory-AI/droid-action@${droidRef}
         with:
           factory_api_key: \${{ secrets.FACTORY_API_KEY }}
-          ci_medic: "true"
+          ci_steward: "true"
           auto_fix: \${{ (startsWith(github.event.workflow_run.head_branch, 'fix-on/') || startsWith(github.event.workflow_run.head_branch, 'protected/')) && 'true' || 'false' }}
           retry_mode: \${{ startsWith(github.event.workflow_run.head_branch, 'noretry/') && 'off' || 'smart' }}
           max_runs_per_pr: \${{ startsWith(github.event.workflow_run.head_branch, 'budget/') && '1' || '10' }}
@@ -360,7 +360,7 @@ function baselineFiles(droidRef: string): Record<string, string> {
     ".github/workflows/ci.yml": CI_WORKFLOW,
     ".github/workflows/integration.yml": INTEGRATION_WORKFLOW,
     ".github/workflows/deploy.yml": DEPLOY_WORKFLOW,
-    ".github/workflows/ci-medic.yml": medicWorkflow(droidRef),
+    ".github/workflows/ci-steward.yml": stewardWorkflow(droidRef),
     ".github/droid-ci.yml": DROID_CI_CONFIG,
   };
 }
@@ -372,7 +372,7 @@ const SCENARIOS: Scenario[] = [
     title: "Real test failure with auto_fix disabled",
     expectation:
       "Diagnosis comment classifying a real failure plus inline suggestion; no commit pushed",
-    assertion: "medic-comment",
+    assertion: "steward-comment",
     files: { "src/calc.ts": CALC_BROKEN },
   },
   {
@@ -390,7 +390,7 @@ const SCENARIOS: Scenario[] = [
     title: "Flaky job that passes on rerun",
     expectation:
       "Classified flaky, failed job rerun via the Actions API, green on attempt 2",
-    assertion: "medic-comment",
+    assertion: "steward-comment",
     files: { "ci/flaky.sh": FLAKY_SCRIPT },
   },
   {
@@ -398,7 +398,7 @@ const SCENARIOS: Scenario[] = [
     branch: "infra/unreachable-cache-host",
     title: "Infrastructure failure that resolves on rerun",
     expectation: "Classified infrastructure, job rerun, green on attempt 2",
-    assertion: "medic-comment",
+    assertion: "steward-comment",
     files: { "ci/infra.sh": INFRA_SCRIPT },
   },
   {
@@ -406,7 +406,7 @@ const SCENARIOS: Scenario[] = [
     branch: "noretry/persistent-flake",
     title: "Retry disabled via retry_mode=off",
     expectation: "No rerun attempted; diagnosis comment only",
-    assertion: "medic-comment",
+    assertion: "steward-comment",
     files: { "ci/flaky.sh": ALWAYS_FAILING_FLAKY_SCRIPT },
   },
   {
@@ -415,7 +415,7 @@ const SCENARIOS: Scenario[] = [
     title: "Two workflows failing on one commit",
     expectation:
       "Exactly one aggregated comment covering CI and Integration, proving the settle wait works",
-    assertion: "medic-comment",
+    assertion: "steward-comment",
     files: {
       "src/calc.ts": CALC_BROKEN,
       "ci/integration.sh": FAILING_SCRIPT(
@@ -430,7 +430,7 @@ const SCENARIOS: Scenario[] = [
     title: "Configuration failure from a missing package script",
     expectation:
       "Classified configuration, no rerun, no source edit; points at package.json",
-    assertion: "medic-comment",
+    assertion: "steward-comment",
     files: { "package.json": PACKAGE_JSON_MISSING_SCRIPT },
   },
   {
@@ -439,7 +439,7 @@ const SCENARIOS: Scenario[] = [
     title: "Only possible repair lives in a protected path",
     expectation:
       "Reports the bad workflow flag but leaves .github/workflows/** untouched despite auto_fix",
-    assertion: "medic-comment",
+    assertion: "steward-comment",
     files: { ".github/workflows/ci.yml": CI_WORKFLOW_BAD_FLAG },
   },
   {
@@ -447,7 +447,7 @@ const SCENARIOS: Scenario[] = [
     branch: "excluded/deploy-staging-fails",
     title: "Failure in a workflow excluded by config",
     expectation: "Gate skips with workflow_not_actionable; no comment posted",
-    assertion: "no-medic-comment",
+    assertion: "no-steward-comment",
     files: {
       "ci/deploy.sh": FAILING_SCRIPT("deploy", "staging credentials rejected"),
     },
@@ -457,7 +457,7 @@ const SCENARIOS: Scenario[] = [
     branch: "draft/average-off-by-one",
     title: "Draft pull request",
     expectation: "Gate skips on skip.draft_prs; no comment posted",
-    assertion: "no-medic-comment",
+    assertion: "no-steward-comment",
     draft: true,
     files: { "src/calc.ts": CALC_BROKEN },
   },
@@ -466,7 +466,7 @@ const SCENARIOS: Scenario[] = [
     branch: "optout/average-off-by-one",
     title: `Pull request labeled ${OPT_OUT_LABEL}`,
     expectation: "Gate skips on skip.labels; no comment posted",
-    assertion: "no-medic-comment",
+    assertion: "no-steward-comment",
     labels: [OPT_OUT_LABEL],
     files: { "src/calc.ts": CALC_BROKEN },
   },
@@ -542,7 +542,7 @@ function seed(options: Options, workdir: string): string {
       "--private",
       "--add-readme",
       "--description",
-      "CI Medic end-to-end sandbox",
+      "CI Steward end-to-end sandbox",
     ]);
   }
 
@@ -559,7 +559,7 @@ function seed(options: Options, workdir: string): string {
     cwd: clone,
   }).stdout;
   if (staged) {
-    run("git", ["commit", "-m", "chore: seed CI Medic sandbox harness"], {
+    run("git", ["commit", "-m", "chore: seed CI Steward sandbox harness"], {
       cwd: clone,
     });
     run("git", ["push", "origin", defaultBranch], { cwd: clone });
@@ -577,7 +577,7 @@ function seed(options: Options, workdir: string): string {
       "-R",
       options.repo,
       "--description",
-      "Opt out of CI Medic",
+      "Opt out of CI Steward",
       "--color",
       "ededed",
     ],
@@ -635,7 +635,7 @@ function openPullRequest(
     "--title",
     `[${scenario.id}] ${scenario.title}`,
     "--body",
-    `Scenario: \`${scenario.id}\`\n\nExpected CI Medic behavior: ${scenario.expectation}\n`,
+    `Scenario: \`${scenario.id}\`\n\nExpected CI Steward behavior: ${scenario.expectation}\n`,
   ];
   if (scenario.draft) {
     args.push("--draft");
@@ -655,7 +655,7 @@ function openPullRequest(
 /* -------------------------------------------------------------------------- */
 
 type Observation = {
-  medicComments: number;
+  stewardComments: number;
   budgetExhausted: boolean;
   fixCommits: string[];
   checksPending: boolean;
@@ -679,10 +679,11 @@ function observe(options: Options, scenario: Scenario): Observation {
 
   const bodies = data.comments.map((comment) => comment.body ?? "");
   return {
-    medicComments: bodies.filter((body) => body.includes("<!-- ci-medic:run="))
-      .length,
+    stewardComments: bodies.filter((body) =>
+      body.includes("<!-- ci-steward:run="),
+    ).length,
     budgetExhausted: bodies.some((body) =>
-      body.includes("<!-- ci-medic:budget-exhausted -->"),
+      body.includes("<!-- ci-steward:budget-exhausted -->"),
     ),
     fixCommits: data.commits
       .map((commit) => commit.messageHeadline)
@@ -698,13 +699,13 @@ function evaluate(
   observation: Observation,
 ): { done: boolean; passed: boolean; detail: string } {
   switch (scenario.assertion) {
-    case "medic-comment":
-      return observation.medicComments > 0
-        ? { done: true, passed: true, detail: "medic comment posted" }
+    case "steward-comment":
+      return observation.stewardComments > 0
+        ? { done: true, passed: true, detail: "steward comment posted" }
         : {
             done: false,
             passed: false,
-            detail: "waiting for a medic comment",
+            detail: "waiting for a steward comment",
           };
     case "fix-commit":
       return observation.fixCommits.length > 0
@@ -720,15 +721,15 @@ function evaluate(
         : {
             done: false,
             passed: false,
-            detail: `runs so far: ${observation.medicComments}; push again to trigger run 2`,
+            detail: `runs so far: ${observation.stewardComments}; push again to trigger run 2`,
           };
-    case "no-medic-comment":
+    case "no-steward-comment":
       // A skip produces no output, so this can only be judged once CI settles.
-      if (observation.medicComments > 0 || observation.budgetExhausted) {
+      if (observation.stewardComments > 0 || observation.budgetExhausted) {
         return {
           done: true,
           passed: false,
-          detail: "medic commented but should have skipped",
+          detail: "steward commented but should have skipped",
         };
       }
       return observation.checksPending
@@ -820,7 +821,7 @@ async function main() {
     return;
   }
 
-  const workdir = mkdtempSync(path.join(tmpdir(), "ci-medic-sandbox-"));
+  const workdir = mkdtempSync(path.join(tmpdir(), "ci-steward-sandbox-"));
   try {
     const defaultBranch = seed(options, workdir);
     const created: { scenario: Scenario; url: string }[] = [];
@@ -835,10 +836,10 @@ async function main() {
       console.log(`  ${scenario.id.padEnd(18)} ${url}`);
     }
     console.log(
-      `\nVerify with:\n  bun run scripts/ci-medic-sandbox.ts --repo ${options.repo} --watch`,
+      `\nVerify with:\n  bun run scripts/ci-steward-sandbox.ts --repo ${options.repo} --watch`,
     );
     console.log(
-      `\nThe budget scenario needs a second push once run 1 finishes:\n  git commit --allow-empty -m "test: trigger second medic run" && git push`,
+      `\nThe budget scenario needs a second push once run 1 finishes:\n  git commit --allow-empty -m "test: trigger second steward run" && git push`,
     );
   } finally {
     rmSync(workdir, { recursive: true, force: true });

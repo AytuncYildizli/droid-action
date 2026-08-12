@@ -7,13 +7,13 @@ import {
   changedFilesSince,
   protectedViolations,
   revertProtectedPaths,
-} from "../src/medic/postrun";
+} from "../src/steward/postrun";
 
 // The fleet cannot force this path: it only fires when the model edits a
 // protected file, and in the sandbox the model correctly declined to. Proving
 // the guard works therefore has to happen against a real repository here,
 // otherwise all we know is that the model behaved, not that it is contained.
-describe("CI Medic protected path enforcement", () => {
+describe("CI Steward protected path enforcement", () => {
   let repo: string;
   const git = (...args: string[]) => $`git ${args}`.cwd(repo).quiet();
   const write = (file: string, body: string) => {
@@ -24,7 +24,7 @@ describe("CI Medic protected path enforcement", () => {
   const read = (file: string) => Bun.file(path.join(repo, file)).text();
 
   beforeEach(async () => {
-    repo = mkdtempSync(path.join(tmpdir(), "medic-postrun-"));
+    repo = mkdtempSync(path.join(tmpdir(), "steward-postrun-"));
     await git("init", "-q", "-b", "main");
     await git("config", "user.email", "test@example.com");
     await git("config", "user.name", "test");
