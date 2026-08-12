@@ -116,14 +116,14 @@ async function main() {
     await revertProtectedPaths(baseSha, violations);
     await $`git push`.nothrow();
     await updateTrackingComment(
-      `## CI Steward\n\nReverted changes to protected paths; [the run](${runUrl}) needs human review:\n\n${violations.map((file) => `- \`${file}\``).join("\n")}`,
+      `## CI Steward\n\nThis run tried to modify protected paths and the changes were reverted:\n\n${violations.map((file) => `- \`${file}\``).join("\n")}\n\nA human should review [the run](${runUrl}).`,
     );
     process.exit(1);
   }
 
   if (!succeeded) {
     await updateTrackingComment(
-      `## CI Steward\n\nRun did not finish; see [the run](${runUrl}).`,
+      `## CI Steward\n\nCI Steward did not finish. See [the run](${runUrl}) for details.`,
     );
   }
 }

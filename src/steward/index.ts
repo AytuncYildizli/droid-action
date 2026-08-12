@@ -270,7 +270,7 @@ export async function prepareStewardMode(
         owner: context.repository.owner,
         repo: context.repository.repo,
         issue_number: pr.number,
-        body: `## CI Steward\n\nRun limit reached (${config.max_runs_per_pr} per pull request). The remaining failures need a human.\n\n${STEWARD_BUDGET_MARKER}`,
+        body: `## CI Steward\n\nCI Steward has reached the lifetime limit of ${config.max_runs_per_pr} runs for this pull request. A human should investigate the remaining failures.\n\n${STEWARD_BUDGET_MARKER}`,
       });
     }
     return skippedResult("max_runs_per_pr");
