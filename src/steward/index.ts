@@ -343,7 +343,7 @@ export async function prepareStewardMode(
   }
 
   const runMarker = `${STEWARD_RUN_MARKER_PREFIX}${context.runId} count=${stewardRuns + 1} sha=${pr.headSha} -->`;
-  const trackingBody = `## CI Steward\n\nCI Steward is analyzing the completed workflow run [${run.name}](${run.html_url}) and the other checks for this commit.\n\n${runMarker}`;
+  const trackingBody = `## CI Steward\n\nDiagnosing [${run.name}](${run.html_url}) and the other checks on this commit.\n\n${runMarker}`;
   const comment = trackingComment
     ? await octokit.rest.issues.updateComment({
         owner: context.repository.owner,
@@ -401,7 +401,9 @@ If a failure is flaky or infrastructure-related and retries are allowed, rerun t
 
 This pull request may have been analyzed before. Read the existing review comments first and do not repost a suggestion that already exists for the same file and line.
 
-Report your findings by updating the existing CI Steward comment with a concise diagnosis, actions taken, and what remains. Update that one comment; do not create additional pull request comments.
+Report by updating the existing CI Steward comment; never create additional pull request comments. Keep the comment short and scannable:
+- Under the "## CI Steward" heading, write one bullet per failed check: check name, verdict (real, flaky, infrastructure, or configuration), and the action taken (fixed in a linked commit, retried, or none), with at most one sentence of explanation.
+- No log excerpts, no restated pull request context, no next-steps section, no closing summary.
 
 Additional repository instructions:
 ${config.instructions || "(none)"}`;
