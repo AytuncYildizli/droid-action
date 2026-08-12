@@ -84,6 +84,18 @@ export async function prepareMcpTools(
       tool.startsWith("github_pr___"),
     );
 
+    // CI Steward runs on workflow_run, which is not an entity context, so the
+    // pull request it is acting on arrives through the environment instead.
+    const stewardPrNumber = process.env.STEWARD_PR_NUMBER;
+    const isPullRequestRun =
+      (isEntityContext(context) && context.isPR) || Boolean(stewardPrNumber);
+    const pullRequestNumber =
+      (isEntityContext(context) && context.isPR
+        ? context.entityNumber?.toString()
+        : undefined) ||
+      stewardPrNumber ||
+      "";
+
     const baseMcpTools: { mcpServers: Record<string, unknown> } = {
       mcpServers: {},
     };
@@ -96,17 +108,23 @@ export async function prepareMcpTools(
         REPO_OWNER: owner,
         REPO_NAME: repo,
         ...(droidCommentId && { DROID_COMMENT_ID: droidCommentId }),
+        ...(stewardPrNumber && { STEWARD_PR_NUMBER: stewardPrNumber }),
+        ...(process.env.STEWARD_RUN_ID && {
+          STEWARD_RUN_ID: process.env.STEWARD_RUN_ID,
+        }),
+        ...(process.env.STEWARD_RUN_COUNT && {
+          STEWARD_RUN_COUNT: process.env.STEWARD_RUN_COUNT,
+        }),
+        ...(process.env.STEWARD_RUN_SHA && {
+          STEWARD_RUN_SHA: process.env.STEWARD_RUN_SHA,
+        }),
         GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME || "",
         GITHUB_API_URL: GITHUB_API_URL,
       },
     };
 
     // Include inline comment server for PRs when requested via allowed tools
-    if (
-      isEntityContext(context) &&
-      context.isPR &&
-      (hasGitHubMcpTools || hasInlineCommentTools)
-    ) {
+    if (isPullRequestRun && (hasGitHubMcpTools || hasInlineCommentTools)) {
       baseMcpTools.mcpServers.github_inline_comment = {
         command: "bun",
         args: ["run", `${repoRoot}/src/mcp/github-inline-comment-server.ts`],
@@ -114,15 +132,14 @@ export async function prepareMcpTools(
           GITHUB_TOKEN: githubToken,
           REPO_OWNER: owner,
           REPO_NAME: repo,
-          PR_NUMBER: context.entityNumber?.toString() || "",
+          PR_NUMBER: pullRequestNumber,
           GITHUB_API_URL: GITHUB_API_URL,
         },
       };
     }
 
     const hasWorkflowToken = !!process.env.DEFAULT_WORKFLOW_TOKEN;
-    const shouldIncludeCIServer =
-      isEntityContext(context) && context.isPR && hasWorkflowToken;
+    const shouldIncludeCIServer = isPullRequestRun && hasWorkflowToken;
 
     if (shouldIncludeCIServer) {
       // Verify the token actually has actions:read permission
@@ -147,7 +164,7 @@ export async function prepareMcpTools(
           GITHUB_TOKEN: process.env.DEFAULT_WORKFLOW_TOKEN,
           REPO_OWNER: owner,
           REPO_NAME: repo,
-          PR_NUMBER: context.entityNumber?.toString() || "",
+          PR_NUMBER: pullRequestNumber,
           RUNNER_TEMP: process.env.RUNNER_TEMP || "/tmp",
         },
       };

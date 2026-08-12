@@ -98,6 +98,15 @@ type BaseContext = {
     securityNotifyTeam: string;
     securityScanSchedule: boolean;
     securityScanDays: number;
+    ciSteward?: boolean;
+    autoFix?: boolean;
+    retryMode?: "off" | "always" | "smart";
+    maxRetries?: number;
+    maxFixAttempts?: number;
+    maxRunsPerPr?: number;
+    stewardModel?: string;
+    instructions?: string;
+    configPath?: string;
   };
 };
 
@@ -161,6 +170,15 @@ export function parseGitHubContext(): GitHubContext {
         1,
         parseInt(process.env.SECURITY_SCAN_DAYS ?? "7", 10) || 7,
       ),
+      ciSteward: process.env.CI_STEWARD === "true",
+      autoFix: process.env.AUTO_FIX === "true",
+      retryMode: parseRetryMode(process.env.RETRY_MODE),
+      maxRetries: parseCount(process.env.MAX_RETRIES, 1, 0),
+      maxFixAttempts: parseCount(process.env.MAX_FIX_ATTEMPTS, 2, 0),
+      maxRunsPerPr: parseCount(process.env.MAX_RUNS_PER_PR, 10, 1),
+      stewardModel: process.env.STEWARD_MODEL ?? "",
+      instructions: process.env.INSTRUCTIONS ?? "",
+      configPath: process.env.CONFIG_PATH ?? ".github/droid-ci.yml",
     },
   };
 
@@ -247,6 +265,21 @@ export function parseGitHubContext(): GitHubContext {
     default:
       throw new Error(`Unsupported event type: ${context.eventName}`);
   }
+}
+
+function parseRetryMode(value: string | undefined): "off" | "always" | "smart" {
+  return value === "off" || value === "always" ? value : "smart";
+}
+
+// `parseInt(...) || fallback` discarded an explicit 0, so max_retries: "0"
+// silently became one retry. Only genuinely unparseable input falls back.
+function parseCount(
+  value: string | undefined,
+  fallback: number,
+  minimum: number,
+): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) ? Math.max(minimum, parsed) : fallback;
 }
 
 export function isIssuesEvent(

@@ -11,11 +11,19 @@ import { prepareSecurityScanMode } from "./commands/security-scan";
 import type { GitHubContext } from "../github/context";
 import type { PrepareResult } from "../prepare/types";
 import type { Octokits } from "../github/api/client";
+import { isAutomationContext } from "../github/context";
+import { prepareStewardMode } from "../steward";
 
 const DROID_APP_BOT_ID = 209825114;
 const SECURITY_REVIEW_MARKER = "## Security Review Summary";
 
 export function shouldTriggerTag(context: GitHubContext): boolean {
+  if (isAutomationContext(context)) {
+    return (
+      context.eventName === "workflow_run" &&
+      (context.inputs.ciSteward ?? false)
+    );
+  }
   if (!isEntityContext(context)) {
     return false;
   }
@@ -72,6 +80,9 @@ export async function prepareTagExecution({
   octokit,
   githubToken,
 }: PrepareTagOptions): Promise<PrepareResult> {
+  if (isAutomationContext(context)) {
+    return prepareStewardMode(context, octokit, githubToken);
+  }
   if (!isEntityContext(context)) {
     throw new Error("Tag execution requires entity context");
   }

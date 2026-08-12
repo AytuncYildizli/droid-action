@@ -1,0 +1,54 @@
+name: CI Steward
+
+on:
+  workflow_run:
+    workflows: ["CI", "Tests"]
+    types: [completed]
+
+permissions:
+  # actions: write covers reading failed job logs and rerunning jobs, which
+  # always go through the workflow token rather than the app token.
+  actions: write
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  ci-steward:
+    # Only process same-repo pull request runs. Watched workflows may also run
+    # on push, and fork pull requests must never reach a checkout here:
+    # workflow_run executes in the base repository with write-scoped tokens
+    # and secrets, so running a fork's commit would hand a pull request author
+    # the app token, the workflow token, and the Factory API key.
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    # Job-level so skipped events never enter the group. Keyed per pull
+    # request, and runs queue rather than cancel: a cancelled run has already
+    # spent a unit of the budget and can be killed mid-diagnosis or mid-fix.
+    concurrency:
+      group: ci-steward-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the head branch (not the merge commit) so CI Steward can
+      # reproduce failures and, when auto_fix is on, commit to a real branch.
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      # No github_token is passed on purpose. The action exchanges the OIDC
+      # token for a Factory Droid App token, and pushes made with an app token
+      # start a new CI run. A push made with secrets.GITHUB_TOKEN does not,
+      # so an auto-fix commit would otherwise sit under stale failing checks.
+      - name: Run CI Steward
+        uses: Factory-AI/droid-action@v1
+        with:
+          factory_api_key: ${{ secrets.FACTORY_API_KEY }}
+          ci_steward: "true"
+          auto_fix: "false"
+          retry_mode: smart

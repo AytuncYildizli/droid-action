@@ -55,7 +55,26 @@ server.tool(
       const isPullRequestReviewComment =
         eventName === "pull_request_review_comment";
 
-      const sanitizedBody = sanitizeContent(body);
+      let sanitizedBody = sanitizeContent(body);
+
+      // CI Steward keeps its lifetime run budget in a marker on this comment.
+      // Droid replaces the whole body, so carry the marker forward or every
+      // successful run silently erases its own record of having happened.
+      // The marker is supplied by the prepare step rather than recovered by
+      // re-reading the comment: a single failed read used to drop it, which
+      // reset the pull request's lifetime count to zero. sanitizeContent
+      // strips HTML comments, so it is always re-appended afterwards.
+      const stewardRunId = process.env.STEWARD_RUN_ID ?? "";
+      const stewardRunCount = process.env.STEWARD_RUN_COUNT ?? "";
+      const stewardRunSha = process.env.STEWARD_RUN_SHA ?? "";
+      if (
+        !isPullRequestReviewComment &&
+        /^\d+$/.test(stewardRunId) &&
+        /^\d+$/.test(stewardRunCount) &&
+        /^[0-9a-f]{7,40}$/.test(stewardRunSha)
+      ) {
+        sanitizedBody = `${sanitizedBody}\n\n<!-- ci-steward:run=${stewardRunId} count=${stewardRunCount} sha=${stewardRunSha} -->`;
+      }
 
       const result = await updateDroidComment(octokit, {
         owner,
