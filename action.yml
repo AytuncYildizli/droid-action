@@ -135,16 +135,16 @@ inputs:
     description: "Show full JSON output from Droid Exec. WARNING: This outputs ALL Droid messages including tool execution results which may contain secrets, API keys, or other sensitive information. These logs are publicly visible in GitHub Actions. Only enable for debugging in non-sensitive environments."
     required: false
     default: "false"
-  ci_medic:
-    description: "Enable CI Medic mode for workflow_run events."
+  ci_steward:
+    description: "Enable CI Steward mode for workflow_run events."
     required: false
     default: "false"
   auto_fix:
-    description: "Allow CI Medic to commit fixes directly to the pull request branch."
+    description: "Allow CI Steward to commit fixes directly to the pull request branch."
     required: false
     default: "false"
   retry_mode:
-    description: "CI Medic retry policy: off, always, or smart."
+    description: "CI Steward retry policy: off, always, or smart."
     required: false
     default: "smart"
   max_retries:
@@ -152,23 +152,23 @@ inputs:
     required: false
     default: "1"
   max_fix_attempts:
-    description: "Maximum consecutive fix commits from CI Medic."
+    description: "Maximum consecutive fix commits from CI Steward."
     required: false
     default: "2"
   max_runs_per_pr:
-    description: "Lifetime maximum CI Medic invocations for a pull request."
+    description: "Lifetime maximum CI Steward invocations for a pull request."
     required: false
     default: "10"
-  medic_model:
-    description: "Model used by CI Medic."
+  steward_model:
+    description: "Model used by CI Steward."
     required: false
     default: ""
   instructions:
-    description: "Additional instructions for CI Medic."
+    description: "Additional instructions for CI Steward."
     required: false
     default: ""
   config_path:
-    description: "Repository CI Medic configuration path."
+    description: "Repository CI Steward configuration path."
     required: false
     default: ".github/droid-ci.yml"
 
@@ -227,13 +227,13 @@ runs:
         SECURITY_NOTIFY_TEAM: ${{ inputs.security_notify_team }}
         SECURITY_SCAN_SCHEDULE: ${{ inputs.security_scan_schedule }}
         SECURITY_SCAN_DAYS: ${{ inputs.security_scan_days }}
-        CI_MEDIC: ${{ inputs.ci_medic }}
+        CI_STEWARD: ${{ inputs.ci_steward }}
         AUTO_FIX: ${{ inputs.auto_fix }}
         RETRY_MODE: ${{ inputs.retry_mode }}
         MAX_RETRIES: ${{ inputs.max_retries }}
         MAX_FIX_ATTEMPTS: ${{ inputs.max_fix_attempts }}
         MAX_RUNS_PER_PR: ${{ inputs.max_runs_per_pr }}
-        MEDIC_MODEL: ${{ inputs.medic_model }}
+        STEWARD_MODEL: ${{ inputs.steward_model }}
         INSTRUCTIONS: ${{ inputs.instructions }}
         CONFIG_PATH: ${{ inputs.config_path }}
         REVIEW_DEPTH: ${{ inputs.review_depth }}
@@ -248,7 +248,7 @@ runs:
         ALL_INPUTS: ${{ toJson(inputs) }}
 
     - name: Install Base Action Dependencies
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true'
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true'
       shell: bash
       run: |
         echo "Installing base-action dependencies..."
@@ -258,7 +258,7 @@ runs:
         cd -
 
     - name: Install Droid CLI
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true' && inputs.path_to_droid_executable == ''
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true' && inputs.path_to_droid_executable == ''
       shell: bash
       run: |
         echo "Installing Droid CLI..."
@@ -267,7 +267,7 @@ runs:
         "$HOME/.local/bin/droid" --version
 
     - name: Setup Custom Droid Path
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true' && inputs.path_to_droid_executable != ''
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true' && inputs.path_to_droid_executable != ''
       shell: bash
       run: |
         echo "Using custom Droid executable: ${{ inputs.path_to_droid_executable }}"
@@ -275,7 +275,7 @@ runs:
         echo "$DROID_DIR" >> "$GITHUB_PATH"
 
     - name: Setup Custom Droids
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true'
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true'
       shell: bash
       run: |
         echo "Setting up custom droids..."
@@ -298,7 +298,7 @@ runs:
         EXPERIMENTAL_ALLOWED_DOMAINS: ${{ inputs.experimental_allowed_domains }}
 
     - name: Install Security Plugin
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true' && steps.prepare.outputs.install_security_skills == 'true'
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true' && steps.prepare.outputs.install_security_skills == 'true'
       shell: bash
       run: |
         echo "Installing security-engineer plugin from factory-plugins marketplace..."
@@ -310,7 +310,7 @@ runs:
 
     - name: Run Droid Exec
       id: droid
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true'
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true'
       shell: bash
       run: |
 
@@ -334,11 +334,11 @@ runs:
         DETAILED_PERMISSION_MESSAGES: "1"
         FACTORY_API_KEY: ${{ inputs.factory_api_key }}
 
-    - name: CI Medic post-run
-      if: steps.prepare.outputs.medic_skipped != 'true' && github.event_name == 'workflow_run' && steps.prepare.outputs.droid_comment_id && always()
+    - name: CI Steward post-run
+      if: steps.prepare.outputs.steward_skipped != 'true' && github.event_name == 'workflow_run' && steps.prepare.outputs.droid_comment_id && always()
       shell: bash
       run: |
-        bun run ${GITHUB_ACTION_PATH}/src/medic/postrun.ts
+        bun run ${GITHUB_ACTION_PATH}/src/steward/postrun.ts
       env:
         REPOSITORY: ${{ github.repository }}
         GITHUB_TOKEN: ${{ steps.prepare.outputs.github_token }}
@@ -349,7 +349,7 @@ runs:
 
     - name: Prepare validator
       id: prepare_validator
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true' && steps.prepare.outputs.run_code_review == 'true'
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true' && steps.prepare.outputs.run_code_review == 'true'
       shell: bash
       run: |
         bun run ${GITHUB_ACTION_PATH}/src/entrypoints/prepare-validator.ts
@@ -366,7 +366,7 @@ runs:
 
     - name: Run Droid Exec (validator)
       id: droid_validator
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true' && steps.prepare.outputs.run_code_review == 'true' && steps.prepare_validator.outputs.validator_should_run != 'false'
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true' && steps.prepare.outputs.run_code_review == 'true' && steps.prepare_validator.outputs.validator_should_run != 'false'
       shell: bash
       run: |
 
@@ -391,7 +391,7 @@ runs:
         FACTORY_API_KEY: ${{ inputs.factory_api_key }}
 
     - name: Update comment with job link
-      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true' && steps.prepare.outputs.droid_comment_id && github.event_name != 'workflow_run' && always()
+      if: steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true' && steps.prepare.outputs.droid_comment_id && github.event_name != 'workflow_run' && always()
       shell: bash
       run: |
         bun run ${GITHUB_ACTION_PATH}/src/entrypoints/update-comment-link.ts
@@ -417,7 +417,7 @@ runs:
         AUTOMATIC_SECURITY_REVIEW: ${{ inputs.automatic_security_review }}
 
     - name: Collect .factory debug files
-      if: always() && steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true'
+      if: always() && steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true'
       shell: bash
       run: |
         if [ -d "$HOME/.factory" ]; then
@@ -425,7 +425,7 @@ runs:
         fi
 
     - name: Upload debug artifacts
-      if: always() && steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.medic_skipped != 'true'
+      if: always() && steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true'
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: droid-review-debug-${{ github.run_id }}

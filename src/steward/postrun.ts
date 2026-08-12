@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * CI Medic post-run step.
+ * CI Steward post-run step.
  *
  * Two jobs, both of which used to be missing:
  *
@@ -11,7 +11,7 @@
  *    control. Anything protected that changed is restored here.
  *
  * 2. The tracking comment is written before Droid starts. When Droid failed,
- *    nothing rewrote it, so the pull request was left reading "CI Medic is
+ *    nothing rewrote it, so the pull request was left reading "CI Steward is
  *    analyzing" forever while a run had already been spent from the budget.
  */
 
@@ -69,7 +69,7 @@ export async function revertProtectedPaths(
   }
   await at($`git add -- ${violations}`.nothrow());
   await at(
-    $`git -c user.name=droid -c user.email=droid@factory.ai commit -m ${"revert(ci): restore protected paths modified by CI Medic"}`.nothrow(),
+    $`git -c user.name=droid -c user.email=droid@factory.ai commit -m ${"revert(ci): restore protected paths modified by CI Steward"}`.nothrow(),
   );
 }
 
@@ -78,7 +78,7 @@ async function updateTrackingComment(body: string): Promise<void> {
   const commentId = Number(process.env.DROID_COMMENT_ID);
   const [owner, repo] = (process.env.REPOSITORY ?? "").split("/");
   if (!token || !commentId || !owner || !repo) return;
-  const marker = process.env.MEDIC_RUN_MARKER ?? "";
+  const marker = process.env.STEWARD_RUN_MARKER ?? "";
   try {
     const octokit = createOctokit(token);
     await octokit.rest.issues.updateComment({
@@ -88,13 +88,13 @@ async function updateTrackingComment(body: string): Promise<void> {
       body: `${body}\n\n${marker}`,
     });
   } catch (error) {
-    console.error(`CI Medic could not update its comment: ${error}`);
+    console.error(`CI Steward could not update its comment: ${error}`);
   }
 }
 
 async function main() {
-  const baseSha = process.env.MEDIC_BASE_SHA ?? "";
-  const patterns = (process.env.MEDIC_PROTECTED_PATHS ?? "")
+  const baseSha = process.env.STEWARD_BASE_SHA ?? "";
+  const patterns = (process.env.STEWARD_PROTECTED_PATHS ?? "")
     .split("\n")
     .map((entry) => entry.trim())
     .filter(Boolean);
@@ -111,19 +111,19 @@ async function main() {
 
   if (violations.length > 0) {
     console.error(
-      `CI Medic modified protected paths; reverting:\n${violations.map((file) => `  - ${file}`).join("\n")}`,
+      `CI Steward modified protected paths; reverting:\n${violations.map((file) => `  - ${file}`).join("\n")}`,
     );
     await revertProtectedPaths(baseSha, violations);
     await $`git push`.nothrow();
     await updateTrackingComment(
-      `## CI Medic\n\nThis run tried to modify protected paths and the changes were reverted:\n\n${violations.map((file) => `- \`${file}\``).join("\n")}\n\nA human should review [the run](${runUrl}).`,
+      `## CI Steward\n\nThis run tried to modify protected paths and the changes were reverted:\n\n${violations.map((file) => `- \`${file}\``).join("\n")}\n\nA human should review [the run](${runUrl}).`,
     );
     process.exit(1);
   }
 
   if (!succeeded) {
     await updateTrackingComment(
-      `## CI Medic\n\nCI Medic did not finish. See [the run](${runUrl}) for details.`,
+      `## CI Steward\n\nCI Steward did not finish. See [the run](${runUrl}) for details.`,
     );
   }
 }

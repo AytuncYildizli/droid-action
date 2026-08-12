@@ -5,9 +5,9 @@ import type { AutomationContext } from "../github/context";
 import type { Octokits } from "../github/api/client";
 import { prepareMcpTools } from "../mcp/install-mcp-server";
 import {
-  loadMedicConfig,
-  MedicConfigError,
-  type MedicConfigOverride,
+  loadStewardConfig,
+  StewardConfigError,
+  type StewardConfigOverride,
 } from "./config";
 import {
   failedChecksForCommit,
@@ -23,14 +23,14 @@ import { checksInScope, describeChecks } from "./scope";
 import type { FailedCheck } from "./scope";
 import type { PrepareResult } from "../prepare/types";
 
-export const MEDIC_RUN_MARKER_PREFIX = "<!-- ci-medic:run=";
-const MEDIC_BUDGET_MARKER = "<!-- ci-medic:budget-exhausted -->";
+export const STEWARD_RUN_MARKER_PREFIX = "<!-- ci-steward:run=";
+const STEWARD_BUDGET_MARKER = "<!-- ci-steward:budget-exhausted -->";
 const DROID_APP_BOT_ID = 209825114;
 
 // Every namespaced entry here must be backed by an MCP server that
 // prepareMcpTools actually installs for a workflow_run context, or the CLI
 // rejects the whole run with "Unknown tool identifier(s)".
-const MEDIC_DIAGNOSIS_TOOLS = [
+const STEWARD_DIAGNOSIS_TOOLS = [
   "Read",
   "Grep",
   "Glob",
@@ -46,10 +46,10 @@ const MEDIC_DIAGNOSIS_TOOLS = [
 // Job logs are attacker-influenced input reaching a model that runs with
 // permission prompts disabled, so the shell and the file writers are granted
 // only when the repository has actually asked for fixes. With fixes off,
-// CI Medic is structurally incapable of changing the working tree.
-const MEDIC_FIX_TOOLS = ["Execute", "Edit", "Create", "ApplyPatch"];
+// CI Steward is structurally incapable of changing the working tree.
+const STEWARD_FIX_TOOLS = ["Execute", "Edit", "Create", "ApplyPatch"];
 
-export type MedicComment = {
+export type StewardComment = {
   body?: string | null;
   user?: { id?: number; type?: string } | null;
 };
@@ -57,34 +57,34 @@ export type MedicComment = {
 // A pull request author commenting from a normal account is type "User", so
 // requiring a bot author removes the ability to plant or reset the budget
 // from outside the app.
-export function isDroidAuthored(comment: MedicComment): boolean {
+export function isDroidAuthored(comment: StewardComment): boolean {
   return comment.user?.id === DROID_APP_BOT_ID || comment.user?.type === "Bot";
 }
 
-export function findTrackingComment<T extends MedicComment>(
+export function findTrackingComment<T extends StewardComment>(
   comments: T[],
 ): T | undefined {
   return comments.find(
     (comment) =>
       isDroidAuthored(comment) &&
-      comment.body?.includes(MEDIC_RUN_MARKER_PREFIX),
+      comment.body?.includes(STEWARD_RUN_MARKER_PREFIX),
   );
 }
 
 // The commit is recorded alongside the count so a second workflow failing on
 // the same commit is recognised as a duplicate instead of paying for another
 // analysis of information the first run already had.
-const MEDIC_MARKER_PATTERN =
-  /<!-- ci-medic:run=\d+ count=(\d+)(?: sha=([0-9a-f]{7,40}))? -->/;
+const STEWARD_MARKER_PATTERN =
+  /<!-- ci-steward:run=\d+ count=(\d+)(?: sha=([0-9a-f]{7,40}))? -->/;
 
-export function medicRunCount(comments: MedicComment[]): number {
+export function stewardRunCount(comments: StewardComment[]): number {
   const body = findTrackingComment(comments)?.body ?? "";
-  return Number(body.match(MEDIC_MARKER_PATTERN)?.[1] ?? 0);
+  return Number(body.match(STEWARD_MARKER_PATTERN)?.[1] ?? 0);
 }
 
-export function medicRunSha(comments: MedicComment[]): string | undefined {
+export function stewardRunSha(comments: StewardComment[]): string | undefined {
   const body = findTrackingComment(comments)?.body ?? "";
-  return body.match(MEDIC_MARKER_PATTERN)?.[2];
+  return body.match(STEWARD_MARKER_PATTERN)?.[2];
 }
 
 // The concurrency group cancels a duplicate that is still pending, but one
@@ -99,15 +99,15 @@ export function isCommitAlreadyProcessed(
   return recordedSha === headSha && Number(runAttempt ?? 1) <= 1;
 }
 
-export function medicAllowedTools(fixEnabled: boolean): string[] {
+export function stewardAllowedTools(fixEnabled: boolean): string[] {
   return fixEnabled
-    ? [...MEDIC_DIAGNOSIS_TOOLS, ...MEDIC_FIX_TOOLS]
-    : [...MEDIC_DIAGNOSIS_TOOLS];
+    ? [...STEWARD_DIAGNOSIS_TOOLS, ...STEWARD_FIX_TOOLS]
+    : [...STEWARD_DIAGNOSIS_TOOLS];
 }
 
-export const MEDIC_ALLOWED_TOOLS = medicAllowedTools(true);
+export const STEWARD_ALLOWED_TOOLS = stewardAllowedTools(true);
 
-type MedicActionInputs = {
+type StewardActionInputs = {
   instructions?: string;
   retryMode?: "off" | "always" | "smart";
   maxRetries?: number;
@@ -116,7 +116,7 @@ type MedicActionInputs = {
   maxRunsPerPr?: number;
 };
 
-// Translates workflow action inputs into a MedicConfigOverride. Only keys the
+// Translates workflow action inputs into a StewardConfigOverride. Only keys the
 // workflow actually set are sent — spelling out the whole nested object made
 // an unrelated input such as auto_fix silently replace repository-configured
 // protected_paths and scope with defaults.
@@ -126,8 +126,8 @@ type MedicActionInputs = {
 // override, not as "unset". With `&&`, `MAX_RETRIES=0` was falsy and the
 // override was silently dropped, leaving the default of 1 retry in place.
 export function buildActionConfig(
-  inputs: MedicActionInputs,
-): MedicConfigOverride {
+  inputs: StewardActionInputs,
+): StewardConfigOverride {
   return {
     ...(inputs.instructions && { instructions: inputs.instructions }),
     ...((inputs.retryMode ?? "smart") !== "smart" ||
@@ -157,13 +157,13 @@ export function buildActionConfig(
   };
 }
 
-export async function prepareMedicMode(
+export async function prepareStewardMode(
   context: AutomationContext,
   octokit: Octokits,
   githubToken: string,
 ): Promise<PrepareResult> {
   if (context.eventName !== "workflow_run") {
-    throw new Error("CI Medic requires a workflow_run event");
+    throw new Error("CI Steward requires a workflow_run event");
   }
   const event = context.payload as unknown as WorkflowRunEvent;
   const run = event.workflow_run;
@@ -182,7 +182,7 @@ export async function prepareMedicMode(
   // this agent's prompt.
   let config;
   try {
-    config = await loadMedicConfig(
+    config = await loadStewardConfig(
       octokit,
       context.repository.owner,
       context.repository.repo,
@@ -191,8 +191,8 @@ export async function prepareMedicMode(
       actionConfig,
     );
   } catch (error) {
-    if (error instanceof MedicConfigError) {
-      console.error(`CI Medic configuration is invalid: ${error.message}`);
+    if (error instanceof StewardConfigError) {
+      console.error(`CI Steward configuration is invalid: ${error.message}`);
       return skippedResult("invalid_config");
     }
     throw error;
@@ -234,7 +234,7 @@ export async function prepareMedicMode(
   } catch (error) {
     // An unreadable comment list means the budget is unknown, and an unknown
     // budget must not be treated as an unused one.
-    console.error(`CI Medic could not read the run budget: ${error}`);
+    console.error(`CI Steward could not read the run budget: ${error}`);
     return skippedResult("budget_unreadable");
   }
 
@@ -242,7 +242,7 @@ export async function prepareMedicMode(
   // than in the number of comments, because Droid rewrites the body of the
   // comment it is given and would otherwise erase each run's own record.
   const trackingComment = findTrackingComment(comments);
-  const medicRuns = medicRunCount(comments);
+  const stewardRuns = stewardRunCount(comments);
 
   // Each watched workflow that fails raises its own workflow_run event, and
   // the first run already waits for every check on the commit before it
@@ -250,22 +250,27 @@ export async function prepareMedicMode(
   // spend a budget unit each. A rerun that fails is a genuinely new outcome,
   // so an attempt above the first is still allowed through.
   if (
-    isCommitAlreadyProcessed(medicRunSha(comments), pr.headSha, run.run_attempt)
+    isCommitAlreadyProcessed(
+      stewardRunSha(comments),
+      pr.headSha,
+      run.run_attempt,
+    )
   ) {
     return skippedResult("commit_already_processed");
   }
 
-  if (medicRuns >= config.max_runs_per_pr) {
+  if (stewardRuns >= config.max_runs_per_pr) {
     const alreadyAnnounced = comments.some(
       (comment) =>
-        isDroidAuthored(comment) && comment.body?.includes(MEDIC_BUDGET_MARKER),
+        isDroidAuthored(comment) &&
+        comment.body?.includes(STEWARD_BUDGET_MARKER),
     );
     if (!alreadyAnnounced) {
       await octokit.rest.issues.createComment({
         owner: context.repository.owner,
         repo: context.repository.repo,
         issue_number: pr.number,
-        body: `## CI Medic\n\nCI Medic has reached the lifetime limit of ${config.max_runs_per_pr} runs for this pull request. A human should investigate the remaining failures.\n\n${MEDIC_BUDGET_MARKER}`,
+        body: `## CI Steward\n\nCI Steward has reached the lifetime limit of ${config.max_runs_per_pr} runs for this pull request. A human should investigate the remaining failures.\n\n${STEWARD_BUDGET_MARKER}`,
       });
     }
     return skippedResult("max_runs_per_pr");
@@ -298,7 +303,7 @@ export async function prepareMedicMode(
       if (inScope.length === 0) {
         fixEnabled = false;
         console.log(
-          `CI Medic is diagnosing only: no failing check is within the configured fix scope (${config.fix.scope.join(", ")}). Failing checks: ${describeChecks(failed) || "none found"}.`,
+          `CI Steward is diagnosing only: no failing check is within the configured fix scope (${config.fix.scope.join(", ")}). Failing checks: ${describeChecks(failed) || "none found"}.`,
         );
       } else if (
         !(await workflowsPassedOnCommit(
@@ -311,7 +316,7 @@ export async function prepareMedicMode(
       ) {
         fixEnabled = false;
         console.log(
-          "CI Medic is diagnosing only: an in-scope workflow did not pass on the pull request base commit, so its failure is not attributable to this pull request.",
+          "CI Steward is diagnosing only: an in-scope workflow did not pass on the pull request base commit, so its failure is not attributable to this pull request.",
         );
       } else if (
         await hasSystemicWorkflowFailure(
@@ -324,7 +329,7 @@ export async function prepareMedicMode(
       ) {
         fixEnabled = false;
         console.log(
-          "CI Medic is diagnosing only: an in-scope workflow failed on at least two other recent pull requests, so the failure may be systemic.",
+          "CI Steward is diagnosing only: an in-scope workflow failed on at least two other recent pull requests, so the failure may be systemic.",
         );
       }
     } catch (error) {
@@ -332,13 +337,13 @@ export async function prepareMedicMode(
       // scope must not be treated as a permissive one.
       fixEnabled = false;
       console.error(
-        `CI Medic could not determine which checks failed, so auto-fix is off for this run: ${error}`,
+        `CI Steward could not determine which checks failed, so auto-fix is off for this run: ${error}`,
       );
     }
   }
 
-  const runMarker = `${MEDIC_RUN_MARKER_PREFIX}${context.runId} count=${medicRuns + 1} sha=${pr.headSha} -->`;
-  const trackingBody = `## CI Medic\n\nCI Medic is analyzing the completed workflow run [${run.name}](${run.html_url}) and the other checks for this commit.\n\n${runMarker}`;
+  const runMarker = `${STEWARD_RUN_MARKER_PREFIX}${context.runId} count=${stewardRuns + 1} sha=${pr.headSha} -->`;
+  const trackingBody = `## CI Steward\n\nCI Steward is analyzing the completed workflow run [${run.name}](${run.html_url}) and the other checks for this commit.\n\n${runMarker}`;
   const comment = trackingComment
     ? await octokit.rest.issues.updateComment({
         owner: context.repository.owner,
@@ -353,27 +358,27 @@ export async function prepareMedicMode(
         body: trackingBody,
       });
   core.setOutput("droid_comment_id", comment.data.id.toString());
-  core.setOutput("medic_pr_number", pr.number.toString());
+  core.setOutput("steward_pr_number", pr.number.toString());
   core.setOutput("run_code_review", "false");
-  core.exportVariable("MEDIC_PR_NUMBER", pr.number.toString());
-  core.exportVariable("DROID_EXEC_RUN_TYPE", "ci-medic");
+  core.exportVariable("STEWARD_PR_NUMBER", pr.number.toString());
+  core.exportVariable("DROID_EXEC_RUN_TYPE", "ci-steward");
   // The comment server rebuilds the marker from these instead of re-reading
   // the comment, so a transient read failure can no longer drop it and reset
   // the pull request's lifetime count. They are passed as two digit-only
   // values because MCP server env vars are interpolated into a shell command
   // unquoted, and the assembled marker contains spaces and angle brackets.
-  core.exportVariable("MEDIC_RUN_MARKER", runMarker);
-  core.exportVariable("MEDIC_RUN_ID", context.runId.toString());
-  core.exportVariable("MEDIC_RUN_COUNT", (medicRuns + 1).toString());
-  core.exportVariable("MEDIC_RUN_SHA", pr.headSha);
+  core.exportVariable("STEWARD_RUN_MARKER", runMarker);
+  core.exportVariable("STEWARD_RUN_ID", context.runId.toString());
+  core.exportVariable("STEWARD_RUN_COUNT", (stewardRuns + 1).toString());
+  core.exportVariable("STEWARD_RUN_SHA", pr.headSha);
   // Consumed by the post-run guard that reverts edits to protected paths.
-  core.exportVariable("MEDIC_BASE_SHA", pr.headSha);
+  core.exportVariable("STEWARD_BASE_SHA", pr.headSha);
   core.exportVariable(
-    "MEDIC_PROTECTED_PATHS",
+    "STEWARD_PROTECTED_PATHS",
     config.fix.protected_paths.join("\n"),
   );
 
-  const prompt = `You are CI Medic for ${context.repository.full_name}, pull request #${pr.number}.
+  const prompt = `You are CI Steward for ${context.repository.full_name}, pull request #${pr.number}.
 
 The workflow run that triggered this execution is ${run.name} (${run.id}) with conclusion ${run.conclusion}.
 Head SHA: ${pr.headSha}. Head branch: ${pr.headRef}. Base branch: ${pr.baseRef}.
@@ -396,7 +401,7 @@ If a failure is flaky or infrastructure-related and retries are allowed, rerun t
 
 This pull request may have been analyzed before. Read the existing review comments first and do not repost a suggestion that already exists for the same file and line.
 
-Report your findings by updating the existing CI Medic comment with a concise diagnosis, actions taken, and what remains. Update that one comment; do not create additional pull request comments.
+Report your findings by updating the existing CI Steward comment with a concise diagnosis, actions taken, and what remains. Update that one comment; do not create additional pull request comments.
 
 Additional repository instructions:
 ${config.instructions || "(none)"}`;
@@ -408,7 +413,7 @@ ${config.instructions || "(none)"}`;
     prompt,
   );
 
-  const allowedTools = medicAllowedTools(fixEnabled);
+  const allowedTools = stewardAllowedTools(fixEnabled);
   const mcpTools = await prepareMcpTools({
     githubToken,
     owner: context.repository.owner,
@@ -420,10 +425,10 @@ ${config.instructions || "(none)"}`;
   });
   const args = [
     `--enabled-tools "${allowedTools.join(",")}"`,
-    '--tag "ci-medic"',
+    '--tag "ci-steward"',
   ];
-  if (context.inputs.medicModel?.trim())
-    args.push(`--model "${context.inputs.medicModel.trim()}"`);
+  if (context.inputs.stewardModel?.trim())
+    args.push(`--model "${context.inputs.stewardModel.trim()}"`);
   if (process.env.DROID_ARGS?.trim()) args.push(process.env.DROID_ARGS.trim());
   core.setOutput("droid_args", args.join(" "));
   core.setOutput("mcp_tools", mcpTools);
@@ -435,8 +440,8 @@ ${config.instructions || "(none)"}`;
 }
 
 function skippedResult(reason: string): PrepareResult {
-  core.setOutput("medic_skipped", "true");
-  console.log(`CI Medic skipped: ${reason}`);
+  core.setOutput("steward_skipped", "true");
+  console.log(`CI Steward skipped: ${reason}`);
   return {
     skipped: true,
     reason,

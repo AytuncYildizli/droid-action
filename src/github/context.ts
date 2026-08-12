@@ -98,13 +98,13 @@ type BaseContext = {
     securityNotifyTeam: string;
     securityScanSchedule: boolean;
     securityScanDays: number;
-    ciMedic?: boolean;
+    ciSteward?: boolean;
     autoFix?: boolean;
     retryMode?: "off" | "always" | "smart";
     maxRetries?: number;
     maxFixAttempts?: number;
     maxRunsPerPr?: number;
-    medicModel?: string;
+    stewardModel?: string;
     instructions?: string;
     configPath?: string;
   };
@@ -170,13 +170,13 @@ export function parseGitHubContext(): GitHubContext {
         1,
         parseInt(process.env.SECURITY_SCAN_DAYS ?? "7", 10) || 7,
       ),
-      ciMedic: process.env.CI_MEDIC === "true",
+      ciSteward: process.env.CI_STEWARD === "true",
       autoFix: process.env.AUTO_FIX === "true",
       retryMode: parseRetryMode(process.env.RETRY_MODE),
       maxRetries: parseCount(process.env.MAX_RETRIES, 1, 0),
       maxFixAttempts: parseCount(process.env.MAX_FIX_ATTEMPTS, 2, 0),
       maxRunsPerPr: parseCount(process.env.MAX_RUNS_PER_PR, 10, 1),
-      medicModel: process.env.MEDIC_MODEL ?? "",
+      stewardModel: process.env.STEWARD_MODEL ?? "",
       instructions: process.env.INSTRUCTIONS ?? "",
       configPath: process.env.CONFIG_PATH ?? ".github/droid-ci.yml",
     },

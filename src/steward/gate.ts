@@ -1,9 +1,9 @@
 import type { WorkflowRunEvent } from "@octokit/webhooks-types";
 import type { Octokits } from "../github/api/client";
-import type { MedicConfig } from "./config";
+import type { StewardConfig } from "./config";
 import type { FailedCheck } from "./scope";
 
-export type MedicPullRequest = {
+export type StewardPullRequest = {
   number: number;
   headSha: string;
   headRef: string;
@@ -17,9 +17,9 @@ export function getWorkflowRun(event: WorkflowRunEvent) {
 }
 
 // workflow_run executes in the base repository with write-scoped tokens and
-// secrets, so a fork's head commit must never reach a checkout that CI Medic
+// secrets, so a fork's head commit must never reach a checkout that CI Steward
 // then runs commands against. The workflow template carries the same guard;
-// this one keeps the property if CI Medic is wired into a hand-written
+// this one keeps the property if CI Steward is wired into a hand-written
 // workflow that omits it.
 export function isTrustedRun(
   event: WorkflowRunEvent,
@@ -33,7 +33,7 @@ export function isTrustedRun(
 
 export function shouldProcessWorkflow(
   event: WorkflowRunEvent,
-  config: MedicConfig,
+  config: StewardConfig,
 ): boolean {
   const run = getWorkflowRun(event);
   if (run.conclusion !== "failure" && run.conclusion !== "timed_out")
@@ -59,7 +59,7 @@ export async function resolvePullRequest(
   owner: string,
   repo: string,
   event: WorkflowRunEvent,
-): Promise<MedicPullRequest | undefined> {
+): Promise<StewardPullRequest | undefined> {
   const run = getWorkflowRun(event);
   const candidate = run.pull_requests?.[0];
   const number = candidate?.number;
@@ -111,8 +111,8 @@ type ResolvedPullRequest =
   | undefined;
 
 export function shouldSkipPullRequest(
-  pr: MedicPullRequest,
-  config: MedicConfig,
+  pr: StewardPullRequest,
+  config: StewardConfig,
   labels: string[],
 ): boolean {
   return (
@@ -123,7 +123,7 @@ export function shouldSkipPullRequest(
   );
 }
 
-// What failed decides whether CI Medic may fix anything, so this has to be
+// What failed decides whether CI Steward may fix anything, so this has to be
 // read from the API rather than inferred from the triggering event: one event
 // names one workflow, while the fix scope is a question about the commit.
 export async function failedChecksForCommit(
@@ -203,7 +203,7 @@ const SYSTEMIC_FAILURE_PR_THRESHOLD = 5;
 
 // A workflow that fails on several other recent pull requests is more likely
 // to be a shared dependency, runner, or repository problem than a regression
-// in this pull request. Keep CI Medic diagnosis-only rather than committing
+// in this pull request. Keep CI Steward diagnosis-only rather than committing
 // the same speculative fix to every affected branch.
 export async function hasSystemicWorkflowFailure(
   octokit: Octokits,
@@ -262,7 +262,7 @@ export async function waitForChecksToFinish(
   // job behind a concurrency group, a runner label nobody provides. Without a
   // deadline this holds a token-bearing job open until the six hour job cap.
   const deadline = Date.now() + maxWaitMs;
-  // Identifying this workflow by its own name kept any concurrent medic run
+  // Identifying this workflow by its own name kept any concurrent steward run
   // from being ignored the moment a repository renamed the workflow.
   const selfName = process.env.GITHUB_WORKFLOW;
   for (;;) {
@@ -283,7 +283,7 @@ export async function waitForChecksToFinish(
     if (!active) return;
     if (Date.now() >= deadline) {
       console.log(
-        `CI Medic stopped waiting for checks on ${headSha} after ${Math.round(maxWaitMs / 60_000)} minutes; some are still pending.`,
+        `CI Steward stopped waiting for checks on ${headSha} after ${Math.round(maxWaitMs / 60_000)} minutes; some are still pending.`,
       );
       return;
     }
