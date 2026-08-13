@@ -87,7 +87,9 @@ export function buildTrackingNoteBody(options: TrackingNoteOptions): string {
       );
     }
     if (typeof review.failed === "number" && review.failed > 0) {
-      counts.push(`${review.failed} could not be anchored to the diff`);
+      counts.push(
+        `${review.failed} could not be posted (inline + note fallback failed)`,
+      );
     }
     if (typeof review.skipped === "number" && review.skipped > 0) {
       counts.push(`${review.skipped} skipped`);

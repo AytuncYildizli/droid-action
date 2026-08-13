@@ -31,7 +31,7 @@ export type ReviewPostOutcome = {
   posted?: number | null;
   /** Approved comments posted as plain notes (line outside the diff). */
   fallbackPosted?: number | null;
-  /** Approved comments the API refused to anchor. */
+  /** Approved comments that failed to post (inline discussion + note fallback). */
   failed?: number | null;
   /** Approved comments dropped before the API (malformed/no anchor). */
   skipped?: number | null;

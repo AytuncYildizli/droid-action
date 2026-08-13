@@ -5,6 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import {
   buildDiffIndex,
+  fallbackNoteBody,
   InvalidValidatedReviewError,
   parseValidatedReview,
   postReview,
@@ -266,6 +267,31 @@ describe("postReview", () => {
   it("fails when the MR carries no diff refs to anchor against", async () => {
     setup(undefined, null);
     await expect(post([comment()])).rejects.toThrow(/missing diff_refs/);
+  });
+});
+
+describe("fallbackNoteBody", () => {
+  const base: ReviewComment = {
+    path: "src/new.ts",
+    body: "finding",
+    line: 12,
+    startLine: null,
+    side: "RIGHT",
+    old_path: "src/old.ts",
+    old_line: null,
+  };
+
+  it("references the old path for LEFT-side comments", () => {
+    const body = fallbackNoteBody({ ...base, side: "LEFT" }, 12);
+    expect(body).toContain("src/old.ts:12");
+    expect(body).not.toContain("src/new.ts");
+  });
+
+  it("uses wording that also covers API refusals, not just out-of-diff lines", () => {
+    const body = fallbackNoteBody(base, 12);
+    expect(body).toContain("src/new.ts:12");
+    expect(body).toContain("could not be posted inline");
+    expect(body).not.toContain("outside the MR diff");
   });
 });
 

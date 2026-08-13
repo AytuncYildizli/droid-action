@@ -93,7 +93,7 @@ describe("buildTrackingNoteBody", () => {
     });
     expect(body).toContain("Three issues worth fixing before merge.");
     expect(body).toContain("3 inline comments posted");
-    expect(body).not.toContain("could not be anchored");
+    expect(body).not.toContain("could not be posted");
     expect(body).not.toContain("skipped");
   });
 
@@ -106,7 +106,9 @@ describe("buildTrackingNoteBody", () => {
     expect(body).toContain(
       "1 posted as a regular note (line outside the diff)",
     );
-    expect(body).toContain("2 could not be anchored to the diff");
+    expect(body).toContain(
+      "2 could not be posted (inline + note fallback failed)",
+    );
     expect(body).toContain("1 skipped");
 
     const empty = buildTrackingNoteBody({ state: "success", review: {} });

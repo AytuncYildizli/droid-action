@@ -381,9 +381,11 @@ export function fallbackNoteBody(
   comment: ReviewComment,
   line: number | null,
 ): string {
-  const location = line !== null ? `${comment.path}:${line}` : comment.path;
+  const filePath =
+    comment.side === "LEFT" ? (comment.old_path ?? comment.path) : comment.path;
+  const location = line !== null ? `${filePath}:${line}` : filePath;
   return (
-    `**\`${location}\`** (this line is outside the MR diff, ` +
+    `**\`${location}\`** (could not be posted inline, ` +
     `so the finding is posted as a regular comment)\n\n${comment.body}`
   );
 }
