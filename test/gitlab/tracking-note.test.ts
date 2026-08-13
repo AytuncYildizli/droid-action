@@ -93,21 +93,27 @@ describe("buildTrackingNoteBody", () => {
     });
     expect(body).toContain("Three issues worth fixing before merge.");
     expect(body).toContain("3 inline comments posted");
-    expect(body).not.toContain("could not be anchored");
+    expect(body).not.toContain("could not be posted");
     expect(body).not.toContain("skipped");
   });
 
-  it("surfaces unanchored and skipped counts only when non-zero", () => {
+  it("surfaces fallback, unanchored, and skipped counts only when non-zero", () => {
     const body = buildTrackingNoteBody({
       state: "success",
-      review: { posted: 1, failed: 2, skipped: 1 },
+      review: { posted: 1, fallbackPosted: 1, failed: 2, skipped: 1 },
     });
     expect(body).toContain("1 inline comment posted");
-    expect(body).toContain("2 could not be anchored to the diff");
+    expect(body).toContain(
+      "1 posted as a regular note (line outside the diff)",
+    );
+    expect(body).toContain(
+      "2 could not be posted (inline + note fallback failed)",
+    );
     expect(body).toContain("1 skipped");
 
     const empty = buildTrackingNoteBody({ state: "success", review: {} });
     expect(empty).not.toContain("inline comment");
+    expect(empty).not.toContain("regular note");
   });
 
   it("omits telemetry block entirely when telemetry is missing or empty", () => {

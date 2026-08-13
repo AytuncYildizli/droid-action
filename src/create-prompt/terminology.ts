@@ -18,7 +18,10 @@ export const GITHUB_TERMINOLOGY: ReviewTerminology = {
   repoExample: "owner/repo",
   pathFieldDescription: 'Relative file path (e.g., "src/index.ts")',
   lineFieldDescription:
-    "Target line number (single-line) or end line number (multi-line). Must be ≥ 0.",
+    "Target line number (single-line) or end line number (multi-line). Must be ≥ 0. " +
+    "Must be a line that appears in the PR diff; GitHub rejects inline comments on lines " +
+    "outside the diff, so a finding about untouched code should anchor to the nearest " +
+    "related changed line instead.",
   mutationToolForbiddance:
     "(inline comments, submit review, delete/minimize/reply/resolve, etc.)",
   submitReviewToolName: "github_pr___submit_review",
