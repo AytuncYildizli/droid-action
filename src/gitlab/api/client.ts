@@ -7,12 +7,26 @@ import type {
   GitlabPosition,
 } from "../types";
 
+/**
+ * The interesting part of a GitLab error is the response body (e.g.
+ * `{"message":"400 Bad request - Note {:line_code=>[...]}"}`), not the
+ * status text, so surface it in the error message where CI logs show it.
+ */
+function describeErrorBody(body: unknown): string {
+  if (body === null || body === undefined || body === "") {
+    return "";
+  }
+  const text = typeof body === "string" ? body : JSON.stringify(body);
+  return text.length > 300 ? `${text.slice(0, 300)}...` : text;
+}
+
 export class GitlabApiError extends Error {
   status: number;
   body: unknown;
 
   constructor(status: number, message: string, body: unknown) {
-    super(`GitLab API ${status}: ${message}`);
+    const detail = describeErrorBody(body);
+    super(`GitLab API ${status}: ${message}${detail ? ` - ${detail}` : ""}`);
     this.name = "GitlabApiError";
     this.status = status;
     this.body = body;

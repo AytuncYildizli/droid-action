@@ -75,6 +75,9 @@ through the ${t.platformName} API, then updates the ${t.trackingCommentName ?? "
   \`"approved"\`, will never reach the ${t.entityNoun}. That file is the whole contract.
 * An approved comment without a usable line anchor cannot be posted, so make sure
   every approved comment keeps its \`path\` and \`line\`.
+* A \`line\` that is not part of the diff (neither added nor context inside a hunk)
+  cannot be posted inline and degrades to a plain ${t.entityNoun} comment — prefer
+  re-anchoring such findings to the nearest related changed line.
 `;
 }
 

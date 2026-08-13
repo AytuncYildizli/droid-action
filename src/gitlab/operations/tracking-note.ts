@@ -76,6 +76,16 @@ export function buildTrackingNoteBody(options: TrackingNoteOptions): string {
         `${review.posted} inline ${review.posted === 1 ? "comment" : "comments"} posted`,
       );
     }
+    if (
+      typeof review.fallbackPosted === "number" &&
+      review.fallbackPosted > 0
+    ) {
+      counts.push(
+        `${review.fallbackPosted} posted as ${
+          review.fallbackPosted === 1 ? "a regular note" : "regular notes"
+        } (line outside the diff)`,
+      );
+    }
     if (typeof review.failed === "number" && review.failed > 0) {
       counts.push(`${review.failed} could not be anchored to the diff`);
     }

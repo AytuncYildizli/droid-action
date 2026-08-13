@@ -29,6 +29,8 @@ export type ReviewTrackingTelemetry = {
 export type ReviewPostOutcome = {
   /** Inline comments successfully posted. */
   posted?: number | null;
+  /** Approved comments posted as plain notes (line outside the diff). */
+  fallbackPosted?: number | null;
   /** Approved comments the API refused to anchor. */
   failed?: number | null;
   /** Approved comments dropped before the API (malformed/no anchor). */
