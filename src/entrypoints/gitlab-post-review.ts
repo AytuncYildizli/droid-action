@@ -20,7 +20,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { setupGitlabToken } from "../gitlab/token";
 import { GitlabClient } from "../gitlab/api/client";
-import type { GitlabPosition } from "../gitlab/types";
+import type { GitlabMrDiff, GitlabPosition } from "../gitlab/types";
 import {
   promptsDir,
   stateFilePath,
@@ -41,6 +41,8 @@ export type ReviewComment = {
 
 export type PostResults = {
   posted: number;
+  /** Approved comments that could not anchor inline and went out as notes. */
+  fallbackPosted: number;
   approved: number;
   rejected: number;
   failed: number;
@@ -172,12 +174,84 @@ export function parseValidatedReview(raw: string): ParsedValidatedReview {
   };
 }
 
+// --- diff index ------------------------------------------------------------
+
+/**
+ * Per-file map of which lines a positioned discussion can anchor to.
+ *
+ * GitLab's rules (Discussions API, "Create a new thread in the merge
+ * request diff"): an added line takes `new_line` only, a removed line takes
+ * `old_line` only, and an unchanged context line requires BOTH numbers. A
+ * line absent from every hunk cannot be anchored at all, no matter the
+ * payload.
+ */
+export type FileLineIndex = {
+  /** new-file line number -> "added", or the old line it pairs with. */
+  newLines: Map<number, number | "added">;
+  /** old-file line number -> "removed", or the new line it pairs with. */
+  oldLines: Map<number, number | "removed">;
+};
+
+const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
+/** Indexes every hunk line, keyed by both `new_path` and `old_path`. */
+export function buildDiffIndex(
+  changes: GitlabMrDiff[],
+): Map<string, FileLineIndex> {
+  const files = new Map<string, FileLineIndex>();
+
+  for (const change of changes) {
+    if (typeof change?.diff !== "string") continue;
+    const index: FileLineIndex = { newLines: new Map(), oldLines: new Map() };
+
+    const lines = change.diff.split("\n");
+    if (lines[lines.length - 1] === "") lines.pop();
+
+    let oldN = 0;
+    let newN = 0;
+    let inHunk = false;
+    for (const raw of lines) {
+      const hunk = HUNK_HEADER.exec(raw);
+      if (hunk) {
+        oldN = Number(hunk[1]);
+        newN = Number(hunk[2]);
+        inHunk = true;
+        continue;
+      }
+      if (!inHunk || raw.startsWith("\\")) continue;
+      if (raw.startsWith("+")) {
+        index.newLines.set(newN, "added");
+        newN += 1;
+      } else if (raw.startsWith("-")) {
+        index.oldLines.set(oldN, "removed");
+        oldN += 1;
+      } else {
+        // Context line (" " prefix, or "" when trailing whitespace was
+        // stripped somewhere along the way).
+        index.newLines.set(newN, oldN);
+        index.oldLines.set(oldN, newN);
+        newN += 1;
+        oldN += 1;
+      }
+    }
+
+    if (change.new_path) files.set(change.new_path, index);
+    if (change.old_path && change.old_path !== change.new_path) {
+      files.set(change.old_path, index);
+    }
+  }
+
+  return files;
+}
+
 // --- posting ---------------------------------------------------------------
 
 type DiffRefs = { base_sha: string; head_sha: string; start_sha: string };
 
 export type PostReviewResult = {
   posted: number;
+  /** Comments that went out as plain MR notes because they cannot anchor. */
+  fallbackPosted: number;
   failures: Array<{ path: string; line: number | null; error: string }>;
 };
 
@@ -235,10 +309,52 @@ function buildPosition(
   return position;
 }
 
+/**
+ * Reshapes `base` to the anchor form GitLab accepts for the line's role in
+ * the diff (added / removed / context), or names the reason no positioned
+ * discussion can ever work for this comment.
+ */
+function refineWithIndex(
+  comment: ReviewComment,
+  base: GitlabPosition,
+  file: FileLineIndex | undefined,
+): { position: GitlabPosition } | { reason: string } {
+  const line = anchorLine(comment);
+  if (line === null) {
+    return { reason: "no usable line anchor" };
+  }
+
+  if (comment.side === "LEFT") {
+    const entry = file?.oldLines.get(line);
+    if (entry === undefined) {
+      return { reason: `old line ${line} is not part of the MR diff` };
+    }
+    const position = { ...base, old_line: line };
+    if (entry === "removed") {
+      delete position.new_line;
+    } else {
+      position.new_line = entry;
+    }
+    return { position };
+  }
+
+  const entry = file?.newLines.get(line);
+  if (entry === undefined) {
+    return { reason: `line ${line} is not part of the MR diff` };
+  }
+  const position = { ...base, new_line: line };
+  if (entry === "added") {
+    delete position.old_line;
+  } else {
+    position.old_line = entry;
+  }
+  return { position };
+}
+
 /** Multi-line variant of {@link buildPosition}; null when there is no span. */
 function buildMultiLinePosition(
   comment: ReviewComment,
-  diffRefs: DiffRefs,
+  base: GitlabPosition,
 ): GitlabPosition | null {
   const end = anchorLine(comment);
   const start = comment.startLine;
@@ -247,7 +363,6 @@ function buildMultiLinePosition(
   }
 
   const left = comment.side === "LEFT";
-  const base = buildPosition(comment, diffRefs);
   const pathForCode = left ? (base.old_path ?? base.new_path) : base.new_path;
   const code = (line: number) =>
     lineCode(pathForCode, left ? line : null, left ? null : line);
@@ -261,10 +376,25 @@ function buildMultiLinePosition(
   };
 }
 
+/** Body for the plain-note fallback when a comment cannot anchor inline. */
+export function fallbackNoteBody(
+  comment: ReviewComment,
+  line: number | null,
+): string {
+  const filePath =
+    comment.side === "LEFT" ? (comment.old_path ?? comment.path) : comment.path;
+  const location = line !== null ? `${filePath}:${line}` : filePath;
+  return (
+    `**\`${location}\`** (could not be posted inline, ` +
+    `so the finding is posted as a regular comment)\n\n${comment.body}`
+  );
+}
+
 /**
  * Posts one discussion per comment; the summary goes into the tracking note
- * rather than a second top-level note. A comment that cannot be posted
- * lands in `failures` instead of throwing.
+ * rather than a second top-level note. A comment whose line cannot anchor
+ * inline (outside the diff, or refused by the API) falls back to a plain MR
+ * note; only a comment that fails both routes lands in `failures`.
  */
 export async function postReview(options: {
   client: GitlabClient;
@@ -273,7 +403,11 @@ export async function postReview(options: {
   comments: ReviewComment[];
 }): Promise<PostReviewResult> {
   const { client, projectId, mrIid, comments } = options;
-  const result: PostReviewResult = { posted: 0, failures: [] };
+  const result: PostReviewResult = {
+    posted: 0,
+    fallbackPosted: 0,
+    failures: [],
+  };
 
   if (comments.length === 0) {
     return result;
@@ -287,18 +421,54 @@ export async function postReview(options: {
     );
   }
 
+  // The changes feed the line index that decides which anchor shape GitLab
+  // will accept. Posting still works without it, one API refusal at a time.
+  let diffIndex: Map<string, FileLineIndex> | null = null;
+  try {
+    const changes = await client.getMrChanges(projectId, mrIid);
+    diffIndex = Array.isArray(changes?.changes)
+      ? buildDiffIndex(changes.changes)
+      : null;
+  } catch (error) {
+    console.warn(
+      "Could not fetch MR changes; posting without a diff line index:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
   for (let i = 0; i < comments.length; i++) {
     const comment = comments[i]!;
     const line = anchorLine(comment);
     const where = `${comment.path}:${line ?? "?"}`;
+    const label = `[${i + 1}/${comments.length}]`;
 
-    // A multi-line anchor GitLab refuses still posts as a single line.
-    const attempts = [
-      buildMultiLinePosition(comment, diffRefs),
-      buildPosition(comment, diffRefs),
-    ].filter((p): p is GitlabPosition => p !== null);
-
+    const base = buildPosition(comment, diffRefs);
+    const attempts: GitlabPosition[] = [];
     let lastError = "";
+
+    if (diffIndex) {
+      const file =
+        diffIndex.get(comment.path) ??
+        (comment.old_path !== null
+          ? diffIndex.get(comment.old_path)
+          : undefined);
+      const refined = refineWithIndex(comment, base, file);
+      if ("reason" in refined) {
+        // Unanchorable no matter the payload; go straight to the fallback.
+        lastError = refined.reason;
+      } else {
+        // A multi-line anchor GitLab refuses still posts as a single line.
+        const multi = buildMultiLinePosition(comment, refined.position);
+        if (multi) attempts.push(multi);
+        attempts.push(refined.position);
+      }
+    } else {
+      const multi = buildMultiLinePosition(comment, base);
+      if (multi) attempts.push(multi);
+      attempts.push(base);
+    }
+
+    let posted = false;
     for (const position of attempts) {
       try {
         await client.createDiscussionOnDiff(
@@ -307,21 +477,37 @@ export async function postReview(options: {
           comment.body,
           position,
         );
-        lastError = "";
+        posted = true;
         break;
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
       }
     }
 
-    if (lastError) {
-      result.failures.push({ path: comment.path, line, error: lastError });
-      console.warn(
-        `  [${i + 1}/${comments.length}] failed ${where}: ${lastError}`,
-      );
-    } else {
+    if (posted) {
       result.posted += 1;
-      console.log(`  [${i + 1}/${comments.length}] posted ${where}`);
+      console.log(`  ${label} posted ${where}`);
+      continue;
+    }
+
+    try {
+      await client.createNote(
+        projectId,
+        mrIid,
+        fallbackNoteBody(comment, line),
+      );
+      result.fallbackPosted += 1;
+      console.log(
+        `  ${label} posted ${where} as a regular note (${lastError})`,
+      );
+    } catch (noteError) {
+      const noteMessage =
+        noteError instanceof Error ? noteError.message : String(noteError);
+      const error = lastError
+        ? `${lastError}; note fallback failed: ${noteMessage}`
+        : noteMessage;
+      result.failures.push({ path: comment.path, line, error });
+      console.warn(`  ${label} failed ${where}: ${error}`);
     }
   }
 
@@ -411,6 +597,7 @@ async function run(): Promise<void> {
 
   const results: PostResults = {
     posted: result.posted,
+    fallbackPosted: result.fallbackPosted,
     approved: parsed.approvedCount,
     rejected: parsed.rejectedCount,
     failed: result.failures.length,
@@ -423,13 +610,19 @@ async function run(): Promise<void> {
   await fs.mkdir(path.dirname(resultsPath), { recursive: true });
   await fs.writeFile(resultsPath, JSON.stringify(results, null, 2));
   console.log(
-    `Posted ${results.posted}/${parsed.approved.length} inline comments on MR !${mrIid} ` +
+    `Posted ${results.posted}/${parsed.approved.length} inline comments ` +
+      `(${results.fallbackPosted} as regular notes) on MR !${mrIid} ` +
       `(results: ${resultsPath}).`,
   );
 
-  // Every anchor failing points at a systemic problem (stale diff refs,
-  // revoked token scope) rather than one bad line number, so surface it.
-  if (parsed.approved.length > 0 && results.posted === 0) {
+  // Unanchorable comments already fell back to plain notes, so nothing at
+  // all reaching the MR points at a systemic problem (revoked token scope,
+  // API unreachable) rather than bad line numbers. Surface it.
+  if (
+    parsed.approved.length > 0 &&
+    results.posted === 0 &&
+    results.fallbackPosted === 0
+  ) {
     throw new Error(
       `gitlab-post-review: all ${parsed.approved.length} approved comments failed to post. ` +
         `First error: ${results.failures[0]?.error ?? "unknown"}`,

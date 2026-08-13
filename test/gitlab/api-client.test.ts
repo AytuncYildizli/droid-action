@@ -104,6 +104,9 @@ describe("GitlabClient", () => {
       const e = err as GitlabApiError;
       expect(e.status).toBe(404);
       expect((e.body as { message: string }).message).toBe("404 Not Found");
+      // The body detail is the actionable part (e.g. which position field
+      // GitLab refused), so it must survive into the message CI logs show.
+      expect(e.message).toContain('"message":"404 Not Found"');
     }
   });
 });

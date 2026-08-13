@@ -35,6 +35,7 @@ async function readPostResults(): Promise<ReviewPostOutcome | null> {
     const results = JSON.parse(raw) as PostResults;
     return {
       posted: results.posted ?? null,
+      fallbackPosted: results.fallbackPosted ?? null,
       failed: results.failed ?? null,
       skipped: results.skipped ?? null,
       summaryBody: results.summaryBody ?? null,

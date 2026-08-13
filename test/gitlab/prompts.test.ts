@@ -108,6 +108,9 @@ describe("generateGitlabReviewValidatorPrompt", () => {
     expect(prompt).not.toContain("update_tracking_note");
     // An approved comment with no anchor is silently unpostable.
     expect(prompt).toContain("without a usable line anchor");
+    // Anchors outside the diff degrade to a plain note; the validator is
+    // told to prefer re-anchoring onto a changed line.
+    expect(prompt).toContain("not part of the diff");
   });
 
   it("enforces the approved/rejected ordering contract", () => {
