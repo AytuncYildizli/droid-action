@@ -116,6 +116,11 @@ async function exchangeForAppToken(oidcToken: string): Promise<string> {
     throw new Error("App token not found in response");
   }
 
+  // Runtime-generated tokens are not known to the Actions runner, so they are
+  // printed verbatim in step `env:` headers and outputs unless registered
+  // with the log masker.
+  core.setSecret(appTokenData.token);
+
   return appTokenData.token;
 }
 
@@ -126,6 +131,7 @@ export async function setupGitHubToken(): Promise<string> {
 
     if (providedToken) {
       console.log("Using provided GITHUB_TOKEN for authentication");
+      core.setSecret(providedToken);
       core.setOutput("GITHUB_TOKEN", providedToken);
       return providedToken;
     }

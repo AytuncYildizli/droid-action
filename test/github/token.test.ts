@@ -34,6 +34,7 @@ describe("setupGitHubToken", () => {
     process.env.OVERRIDE_GITHUB_TOKEN = "override-token";
 
     const setOutputSpy = spyOn(core, "setOutput").mockImplementation(() => {});
+    const setSecretSpy = spyOn(core, "setSecret").mockImplementation(() => {});
     const getIdTokenSpy = spyOn(core, "getIDToken").mockResolvedValue(
       "oidc-token",
     );
@@ -41,10 +42,12 @@ describe("setupGitHubToken", () => {
     const result = await setupGitHubToken();
 
     expect(result).toBe("override-token");
+    expect(setSecretSpy).toHaveBeenCalledWith("override-token");
     expect(setOutputSpy).toHaveBeenCalledWith("GITHUB_TOKEN", "override-token");
     expect(getIdTokenSpy).not.toHaveBeenCalled();
 
     setOutputSpy.mockRestore();
+    setSecretSpy.mockRestore();
     getIdTokenSpy.mockRestore();
   });
 
@@ -58,6 +61,7 @@ describe("setupGitHubToken", () => {
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const setOutputSpy = spyOn(core, "setOutput").mockImplementation(() => {});
+    const setSecretSpy = spyOn(core, "setSecret").mockImplementation(() => {});
     const getIdTokenSpy = spyOn(core, "getIDToken").mockResolvedValue(
       "oidc-token",
     );
@@ -70,10 +74,12 @@ describe("setupGitHubToken", () => {
     expect(result).toBe("app-token");
     expect(getIdTokenSpy).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(setSecretSpy).toHaveBeenCalledWith("app-token");
     expect(setOutputSpy).toHaveBeenCalledWith("GITHUB_TOKEN", "app-token");
     expect(retrySpy).toHaveBeenCalledTimes(2);
 
     setOutputSpy.mockRestore();
+    setSecretSpy.mockRestore();
     getIdTokenSpy.mockRestore();
     retrySpy.mockRestore();
   });
