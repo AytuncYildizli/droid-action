@@ -14,6 +14,7 @@ async function run() {
     let token: string;
     if (overrideToken) {
       console.log("Using provided GitHub token");
+      core.setSecret(overrideToken);
       token = overrideToken;
     } else {
       console.log("Requesting OIDC token...");
