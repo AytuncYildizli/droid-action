@@ -133,7 +133,7 @@ describe("prepareSecurityReviewMode", () => {
     expect(promptSpy).toHaveBeenCalled();
     expect(mcpSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        includePrReviewMarker: true,
+        prValidationSource: "review",
         allowedTools: expect.arrayContaining([
           "Execute",
           "Task",
