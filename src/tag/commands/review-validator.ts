@@ -94,6 +94,7 @@ export async function prepareReviewValidatorMode({
     owner: context.repository.owner,
     repo: context.repository.repo,
     droidCommentId: trackingCommentId.toString(),
+    includePrReviewMarker: true,
     allowedTools,
     mode: "tag",
     context,
