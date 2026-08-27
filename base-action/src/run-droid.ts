@@ -18,6 +18,114 @@ function redactEnvSecrets(text: string): string {
   return text.replace(/--env\s+(\S+?)=\S+/g, "--env $1=***");
 }
 
+const SAFE_ERROR_MESSAGE_LIMIT = 800;
+
+function settingsSecrets(): string[] {
+  const rawSettings = process.env.INPUT_SETTINGS;
+  if (!rawSettings?.trim().startsWith("{")) return [];
+
+  try {
+    const secrets: string[] = [];
+    const visit = (value: unknown, key = "") => {
+      if (
+        typeof value === "string" &&
+        value.length >= 8 &&
+        /(?:api[_-]?key|token|secret|password)$/i.test(key)
+      ) {
+        secrets.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value) visit(item);
+        return;
+      }
+      if (typeof value === "object" && value !== null) {
+        for (const [childKey, childValue] of Object.entries(value)) {
+          visit(childValue, childKey);
+        }
+      }
+    };
+    visit(JSON.parse(rawSettings));
+    return secrets;
+  } catch {
+    return [];
+  }
+}
+
+/** Return an actionable provider error without leaking common credentials. */
+export function sanitizeDroidErrorMessage(value: unknown): string {
+  let message =
+    typeof value === "string" && value.trim()
+      ? value.trim()
+      : "Droid returned an unspecified error";
+
+  message = redactEnvSecrets(message)
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer ***")
+    .replace(/\bfk-[A-Za-z0-9_-]+\b/g, "fk-***")
+    .replace(/\bgh(?:p|o|u|s|r)_[A-Za-z0-9_]+\b/g, "gh***")
+    .replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "github_pat_***")
+    .replace(
+      /([?&](?:api[_-]?key|access[_-]?token|token|key)=)[^&\s]+/gi,
+      "$1***",
+    );
+
+  for (const secret of [
+    process.env.FACTORY_API_KEY,
+    process.env.GITHUB_TOKEN,
+    process.env.GH_TOKEN,
+    process.env.OVERRIDE_GITHUB_TOKEN,
+    ...settingsSecrets(),
+  ]) {
+    if (secret && secret.length >= 8) {
+      message = message.split(secret).join("***");
+    }
+  }
+
+  message = message.replace(/[\r\n\t]+/g, " ").trim();
+  return message.length > SAFE_ERROR_MESSAGE_LIMIT
+    ? `${message.slice(0, SAFE_ERROR_MESSAGE_LIMIT)}…`
+    : message;
+}
+
+const GENERIC_DROID_ERROR_PATTERNS = [
+  /^exec failed$/i,
+  /^droid exec (?:failed|exited with code \d+)$/i,
+  /^operation failed$/i,
+];
+
+function isGenericDroidError(message: string | undefined): boolean {
+  return Boolean(
+    message &&
+      GENERIC_DROID_ERROR_PATTERNS.some((pattern) =>
+        pattern.test(message.trim()),
+      ),
+  );
+}
+
+/** Keep a specific provider receipt when Droid later emits a generic epilogue. */
+export function preferActionableDroidError(
+  current: string | undefined,
+  candidate: unknown,
+): string {
+  if (typeof candidate !== "string" || !candidate.trim()) {
+    return current || "Droid returned an unspecified error";
+  }
+  const next = sanitizeDroidErrorMessage(candidate);
+  if (!current || isGenericDroidError(current)) {
+    return next;
+  }
+  return isGenericDroidError(next) ? current : next;
+}
+
+/** Factory returns HTTP 402 when the account's Droid usage window is spent. */
+export function isUsageLimitError(message: string | undefined | null): boolean {
+  if (!message) return false;
+  return (
+    /(?:^|\D)402(?:\D|$)/.test(message) &&
+    /(payment required|usage limit|extra usage balance|quota)/i.test(message)
+  );
+}
+
 const BASE_ARGS = [
   "exec",
   "--output-format",
@@ -25,11 +133,113 @@ const BASE_ARGS = [
   "--skip-permissions-unsafe",
 ];
 
+const DROID_CORE_EDIT_CREATE_MODELS = new Set([
+  "inkling",
+  "glm-5.2",
+  "glm-5.2-fast",
+  "kimi-k3",
+  "kimi-k2.7-code",
+  "kimi-k2.6",
+  "nemotron-3-ultra",
+  "deepseek-v4-flash-0731",
+  "deepseek-v4-pro",
+  "minimax-m3",
+  "minimax-m2.7",
+]);
+
+function readArgValue(args: string[], flag: string): string | undefined {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === flag) return args[index + 1];
+    if (arg?.startsWith(`${flag}=`)) return arg.slice(flag.length + 1);
+  }
+  return undefined;
+}
+
+function filterApplyPatch(args: string[]): string[] {
+  const filterTools = (value: string): string =>
+    value
+      .split(",")
+      .map((tool) => tool.trim())
+      .filter((tool) => tool && tool.toLowerCase() !== "applypatch")
+      .join(",");
+
+  const filtered = [...args];
+  for (let index = 0; index < filtered.length; index += 1) {
+    const arg = filtered[index];
+    if (arg === "--enabled-tools") {
+      const enabledTools = filtered[index + 1];
+      if (enabledTools !== undefined) {
+        filtered[index + 1] = filterTools(enabledTools);
+        index += 1;
+      }
+    } else if (arg?.startsWith("--enabled-tools=")) {
+      filtered[index] = `--enabled-tools=${filterTools(
+        arg.slice("--enabled-tools=".length),
+      )}`;
+    }
+  }
+  return filtered;
+}
+
+/** Droid Core edit-capable models expose Edit/Create, not ApplyPatch. */
+export function filterUnsupportedToolsForModel(args: string[]): string[] {
+  const model = readArgValue(args, "--model")?.trim().toLowerCase();
+  return model && DROID_CORE_EDIT_CREATE_MODELS.has(model)
+    ? filterApplyPatch(args)
+    : [...args];
+}
+
+/** Replace the primary model with a custom fallback and its supported tools. */
+export function prepareUsageFallbackArgs(
+  args: string[],
+  fallbackModel: string,
+): string[] {
+  const model = fallbackModel.trim();
+  const replaced: string[] = [];
+  let modelWritten = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--model") {
+      if (!modelWritten) {
+        replaced.push("--model", model);
+        modelWritten = true;
+      }
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--model=")) {
+      if (!modelWritten) {
+        replaced.push(`--model=${model}`);
+        modelWritten = true;
+      }
+      continue;
+    }
+    if (arg === "--reasoning-effort") {
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--reasoning-effort=")) {
+      continue;
+    }
+    if (arg !== undefined) replaced.push(arg);
+  }
+
+  if (!modelWritten) {
+    const promptFlagIndex = replaced.indexOf("-f");
+    const insertAt = promptFlagIndex >= 0 ? promptFlagIndex : replaced.length;
+    replaced.splice(insertAt, 0, `--model=${model}`);
+  }
+
+  return filterApplyPatch(replaced);
+}
+
 /**
  * Sanitizes JSON output to remove sensitive information when full output is disabled
  * Returns a safe summary message or null if the message should be completely suppressed
  */
-function sanitizeJsonOutput(
+export function sanitizeJsonOutput(
   jsonObj: any,
   showFullOutput: boolean,
 ): string | null {
@@ -74,6 +284,17 @@ function sanitizeJsonOutput(
     );
   }
 
+  if (type === "error") {
+    return JSON.stringify(
+      {
+        type: "error",
+        message: sanitizeDroidErrorMessage(jsonObj.message),
+      },
+      null,
+      2,
+    );
+  }
+
   // For any other message types, suppress completely in non-full-output mode
   return null;
 }
@@ -89,6 +310,7 @@ export type DroidOptions = {
   systemPrompt?: string;
   appendSystemPrompt?: string;
   showFullOutput?: string;
+  fallbackModel?: string;
 };
 
 type PreparedConfig = {
@@ -117,7 +339,8 @@ export function prepareRunConfig(
     droidArgs.push(...customArgs);
   }
 
-  droidArgs.push("-f", promptPath);
+  const filteredDroidArgs = filterUnsupportedToolsForModel(droidArgs);
+  filteredDroidArgs.push("-f", promptPath);
 
   const customEnv: Record<string, string> = {};
 
@@ -126,7 +349,7 @@ export function prepareRunConfig(
   }
 
   return {
-    droidArgs,
+    droidArgs: filteredDroidArgs,
     promptPath,
     env: customEnv,
   };
@@ -264,8 +487,13 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
   let lastExitCode = 1;
   let currentDroidArgs = config.droidArgs;
   let modelArgsStripped = false;
+  let fallbackActivated = false;
+  let fallbackRetryPending = false;
+  let attemptCount = 0;
   type ResultEvent = { is_error?: boolean; result?: string };
+  type ErrorEvent = { message?: string };
   let lastResultEvent: ResultEvent | null = null;
+  let lastErrorEvent: ErrorEvent | null = null;
   // Fast client-side failures (e.g. an invalid --model value) print to
   // stderr and exit before any stream-json result event is emitted, so keep
   // a bounded tail of stderr as an error-message fallback.
@@ -275,10 +503,13 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
   // assigned inside stream handler closures, so direct reads after the
   // retry loop would otherwise be narrowed to their initial values.
   const getLastResultEvent = (): ResultEvent | null => lastResultEvent;
+  const getLastErrorEvent = (): ErrorEvent | null => lastErrorEvent;
   const getStderrTail = (): string => stderrTail;
 
   const runDroidOnce = (): Promise<number> => {
     stderrTail = "";
+    lastResultEvent = null;
+    lastErrorEvent = null;
     const droidProcess = spawn(droidExecutable, currentDroidArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
@@ -336,6 +567,18 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
                 typeof parsed.result === "string" ? parsed.result : undefined,
             };
           }
+          if (
+            typeof parsed === "object" &&
+            parsed !== null &&
+            parsed.type === "error"
+          ) {
+            lastErrorEvent = {
+              message: preferActionableDroidError(
+                lastErrorEvent?.message,
+                parsed.message,
+              ),
+            };
+          }
           const sanitizedOutput = sanitizeJsonOutput(parsed, showFullOutput);
 
           if (sanitizedOutput) {
@@ -379,6 +622,7 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
   try {
     await retryWithBackoff(
       async () => {
+        attemptCount += 1;
         lastExitCode = await runDroidOnce();
         if (lastExitCode !== 0) {
           console.log(`Droid Exec exited with code ${lastExitCode}`);
@@ -387,11 +631,45 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
           // id), retry without --model so droid exec falls back to the
           // organization's default model.
           const resultEvent = getLastResultEvent();
-          const policyBlocked =
-            resultEvent?.is_error === true &&
-            isModelPolicyError(resultEvent.result);
-          const invalidModel = isInvalidModelError(getStderrTail());
+          const errorEvent = getLastErrorEvent();
+          const resultMessage =
+            resultEvent?.is_error === true ? resultEvent.result : undefined;
+          const actionableError = preferActionableDroidError(
+            errorEvent?.message,
+            resultMessage || getStderrTail(),
+          );
+          const usageLimit = isUsageLimitError(actionableError);
+
           if (
+            usageLimit &&
+            !fallbackActivated &&
+            options.fallbackModel?.trim()
+          ) {
+            fallbackActivated = true;
+            fallbackRetryPending = true;
+            currentDroidArgs = prepareUsageFallbackArgs(
+              currentDroidArgs,
+              options.fallbackModel,
+            );
+            console.warn(
+              "Droid Core usage limit reached; retrying with the configured local fallback model.",
+            );
+            core.setOutput(
+              "model_fallback_note",
+              "Droid Core quota was exhausted, so this run continued on the configured local GLM fallback.",
+            );
+          }
+
+          const policyBlocked =
+            (resultEvent?.is_error === true &&
+              isModelPolicyError(resultEvent.result)) ||
+            isModelPolicyError(errorEvent?.message);
+          const invalidModel =
+            isInvalidModelError(getStderrTail()) ||
+            isInvalidModelError(errorEvent?.message);
+          if (
+            !usageLimit &&
+            !fallbackActivated &&
             !modelArgsStripped &&
             (policyBlocked || invalidModel) &&
             currentDroidArgs.some(
@@ -414,29 +692,50 @@ export async function runDroid(promptPath: string, options: DroidOptions) {
                 "by your organization to control which model is used.",
             );
           }
-          throw new Error(`Droid Exec exited with code ${lastExitCode}`);
+          throw new Error(actionableError);
         }
       },
-      { maxAttempts: 3, initialDelayMs: 5000, maxDelayMs: 20000 },
+      {
+        maxAttempts: 3,
+        initialDelayMs: 5000,
+        maxDelayMs: 20000,
+        shouldRetry: (error) => {
+          if (fallbackRetryPending) {
+            fallbackRetryPending = false;
+            return true;
+          }
+          if (fallbackActivated && isInvalidModelError(error.message)) {
+            return false;
+          }
+          return !isUsageLimitError(error.message);
+        },
+      },
     );
     core.setOutput("conclusion", "success");
     return;
   } catch (_) {
-    // All retry attempts exhausted
+    // Retries exhausted, or a permanent failure stopped the loop early.
     console.error(
-      `Droid Exec failed after 3 total attempts (exit code: ${lastExitCode})`,
+      `Droid Exec failed after ${attemptCount} total attempt${attemptCount === 1 ? "" : "s"} (exit code: ${lastExitCode})`,
     );
     const finalResultEvent = getLastResultEvent();
+    const finalErrorEvent = getLastErrorEvent();
     let finalStderrTail = getStderrTail().trim();
     if (isInvalidModelError(finalStderrTail)) {
       finalStderrTail = condenseInvalidModelError(finalStderrTail);
     }
-    const rawErrorMessage =
+    const structuredErrorMessage =
       finalResultEvent?.is_error && finalResultEvent.result?.trim()
-        ? finalResultEvent.result.trim()
-        : finalStderrTail
-          ? `Droid Exec exited with code ${lastExitCode}:\n${finalStderrTail}`
-          : `Droid Exec exited with code ${lastExitCode}`;
+        ? preferActionableDroidError(
+            finalErrorEvent?.message?.trim(),
+            finalResultEvent.result.trim(),
+          )
+        : finalErrorEvent?.message?.trim();
+    const rawErrorMessage = structuredErrorMessage
+      ? structuredErrorMessage
+      : finalStderrTail
+        ? `Droid Exec exited with code ${lastExitCode}:\n${finalStderrTail}`
+        : `Droid Exec exited with code ${lastExitCode}`;
     const errorMessage =
       rawErrorMessage.length > 2000
         ? `${rawErrorMessage.slice(0, 2000)}…`

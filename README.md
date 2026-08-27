@@ -336,10 +336,12 @@ To leave comments and approvals on your PRs, Droid needs a GitHub token. There a
 
 ### Core Inputs
 
-| Input             | Purpose                                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `factory_api_key` | **Required.** Grants Droid Exec permission to run via Factory.                                         |
-| `github_token`    | Optional override if you prefer a custom GitHub App/token. By default the installed app token is used. |
+| Input             | Purpose                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `factory_api_key` | **Required.** Grants Droid Exec permission to run via Factory.                                                |
+| `github_token`    | Optional override if you prefer a custom GitHub App/token. By default the installed app token is used.        |
+| `settings`        | Droid settings JSON or a path, including any `customModels` used by the fallback.                             |
+| `fallback_model`  | Custom model ID to retry once when Factory returns a Droid Core usage-limit 402; empty disables the fallback. |
 
 ### Review Configuration
 

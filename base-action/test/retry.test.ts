@@ -69,4 +69,25 @@ describe("retryWithBackoff", () => {
       | undefined;
     expect(firstCall?.[1]).toBe(5);
   });
+
+  it("stops immediately when shouldRetry rejects the failure", async () => {
+    let attempts = 0;
+
+    await expect(
+      retryWithBackoff(
+        async () => {
+          attempts += 1;
+          throw new Error("402 Droid Core usage limit");
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 5,
+          shouldRetry: () => false,
+        },
+      ),
+    ).rejects.toThrow("402 Droid Core usage limit");
+
+    expect(attempts).toBe(1);
+    expect(timeoutSpy).not.toHaveBeenCalled();
+  });
 });

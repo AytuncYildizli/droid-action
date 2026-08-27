@@ -523,6 +523,20 @@ describe("updateCommentBody", () => {
       const occurrences = result.split(SHIELD_URL_FRAGMENT).length - 1;
       expect(occurrences).toBe(1);
     });
+
+    it("removes the badge when the requested security review failed", () => {
+      const input: CommentUpdateInput = {
+        ...baseInput,
+        currentBody:
+          "![Security Review](https://img.shields.io/badge/security%20review-ran-blue)\n\n" +
+          "Droid is reviewing code and running a security check…",
+        actionFailed: true,
+        errorDetails: 'Tool "ApplyPatch" is unavailable',
+        securityReviewRan: true,
+      };
+
+      expect(updateCommentBody(input)).not.toContain(SHIELD_URL_FRAGMENT);
+    });
   });
 
   describe("model policy errors and fallback notices", () => {

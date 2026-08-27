@@ -254,7 +254,15 @@ export function updateCommentBody(input: CommentUpdateInput): string {
   // Remove any existing duration info at the bottom
   bodyContent = bodyContent.replace(/\n*---\n*Duration: [0-9]+m? [0-9]+s/g, "");
 
-  if (securityReviewRan && !bodyContent.includes("security%20review-ran")) {
+  if (actionFailed) {
+    bodyContent = bodyContent.replaceAll(SECURITY_REVIEW_BADGE, "").trim();
+  }
+
+  if (
+    securityReviewRan &&
+    !actionFailed &&
+    !bodyContent.includes("security%20review-ran")
+  ) {
     bodyContent = `${SECURITY_REVIEW_BADGE}\n\n${bodyContent}`.trim();
   }
 

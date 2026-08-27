@@ -216,7 +216,7 @@ async function run(): Promise<void> {
     throw err;
   }
 
-  // Write ~/.factory/droid/settings.json. Accepts either a raw JSON string
+  // Write ~/.factory/settings.json. Accepts either a raw JSON string
   // or a path to a JSON file (matching the GitHub action's `settings`
   // input). Always sets enableAllProjectMcpServers=true so project-scope
   // MCP servers (if any) are trusted without prompting.
