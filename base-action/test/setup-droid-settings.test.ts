@@ -11,7 +11,7 @@ const testHomeDir = join(
   "droid-exec-test-home",
   Date.now().toString(),
 );
-const settingsPath = join(testHomeDir, ".factory", "droid", "settings.json");
+const settingsPath = join(testHomeDir, ".factory", "settings.json");
 const testSettingsDir = join(testHomeDir, ".factory-test");
 const testSettingsPath = join(testSettingsDir, "test-settings.json");
 

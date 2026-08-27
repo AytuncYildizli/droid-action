@@ -7,7 +7,7 @@ export async function setupDroidSettings(
   homeDir?: string,
 ) {
   const home = homeDir ?? homedir();
-  const settingsDir = `${home}/.factory/droid`;
+  const settingsDir = `${home}/.factory`;
   const settingsPath = `${settingsDir}/settings.json`;
   console.log(`Setting up Droid settings at: ${settingsPath}`);
 
