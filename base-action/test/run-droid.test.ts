@@ -132,22 +132,6 @@ describe("prepareRunConfig", () => {
     expect(prepared.promptPath).toBe("/tmp/test-prompt.txt");
   });
 
-  test("should forward the configured max turns to Droid Exec", () => {
-    const options: DroidOptions = { maxTurns: "120" };
-    const prepared = prepareRunConfig("/tmp/test-prompt.txt", options);
-
-    expect(prepared.droidArgs).toEqual([
-      "exec",
-      "--output-format",
-      "stream-json",
-      "--skip-permissions-unsafe",
-      "--max-turns",
-      "120",
-      "-f",
-      "/tmp/test-prompt.txt",
-    ]);
-  });
-
   test("should use provided prompt path", () => {
     const options: DroidOptions = {};
     const prepared = prepareRunConfig("/custom/prompt/path.txt", options);

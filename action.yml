@@ -47,10 +47,6 @@ inputs:
     description: "Additional arguments to pass directly to Droid CLI"
     required: false
     default: ""
-  max_turns:
-    description: "Maximum number of agent turns allowed for each Droid Exec pass; empty uses the Droid CLI default"
-    required: false
-    default: ""
   additional_permissions:
     description: "Additional GitHub permissions to request (e.g., 'actions: read')"
     required: false
@@ -336,7 +332,6 @@ runs:
         INPUT_PATH_TO_BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable }}
         INPUT_SHOW_FULL_OUTPUT: ${{ inputs.show_full_output }}
         INPUT_FALLBACK_MODEL: ${{ inputs.fallback_model }}
-        INPUT_MAX_TURNS: ${{ inputs.max_turns }}
 
         # Model configuration
         GITHUB_TOKEN: ${{ steps.prepare.outputs.GITHUB_TOKEN }}
@@ -395,7 +390,6 @@ runs:
         INPUT_PATH_TO_BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable }}
         INPUT_SHOW_FULL_OUTPUT: ${{ inputs.show_full_output }}
         INPUT_FALLBACK_MODEL: ${{ inputs.fallback_model }}
-        INPUT_MAX_TURNS: ${{ inputs.max_turns }}
 
         # Model configuration
         GITHUB_TOKEN: ${{ steps.prepare.outputs.GITHUB_TOKEN }}
