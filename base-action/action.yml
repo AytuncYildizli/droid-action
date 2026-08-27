@@ -18,6 +18,10 @@ inputs:
     description: "Droid Exec settings as JSON string or path to settings JSON file"
     required: false
     default: ""
+  fallback_model:
+    description: "Custom model ID used only when Factory returns a Droid Core usage-limit 402"
+    required: false
+    default: ""
 
   reasoning_effort:
     description: "Optional reasoning effort to pass to Droid Exec via --reasoning-effort (e.g., 'low', 'medium', 'high', 'xhigh'). If empty, no --reasoning-effort flag is passed."
@@ -57,6 +61,12 @@ outputs:
   conclusion:
     description: "Execution status of Droid Exec ('success' or 'failure')"
     value: ${{ steps.run_droid.outputs.conclusion }}
+  error_message:
+    description: "Redacted provider/runtime error when execution fails"
+    value: ${{ steps.run_droid.outputs.error_message }}
+  model_fallback_note:
+    description: "Notice emitted when execution moves to the configured fallback model"
+    value: ${{ steps.run_droid.outputs.model_fallback_note }}
 
 runs:
   using: "composite"
@@ -122,6 +132,7 @@ runs:
         INPUT_PATH_TO_DROID_EXECUTABLE: ${{ inputs.path_to_droid_executable }}
         INPUT_PATH_TO_BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable }}
         INPUT_SHOW_FULL_OUTPUT: ${{ inputs.show_full_output }}
+        INPUT_FALLBACK_MODEL: ${{ inputs.fallback_model }}
 
         # Provider configuration
         FACTORY_API_KEY: ${{ inputs.factory_api_key }}

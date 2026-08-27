@@ -30,6 +30,10 @@ inputs:
     description: "Droid Exec settings as JSON string or path to settings JSON file"
     required: false
     default: ""
+  fallback_model:
+    description: "Custom model ID used only when Factory returns a Droid Core usage-limit 402"
+    required: false
+    default: ""
 
   # Auth configuration
   factory_api_key:
@@ -327,6 +331,7 @@ runs:
         INPUT_PATH_TO_DROID_EXECUTABLE: ${{ inputs.path_to_droid_executable }}
         INPUT_PATH_TO_BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable }}
         INPUT_SHOW_FULL_OUTPUT: ${{ inputs.show_full_output }}
+        INPUT_FALLBACK_MODEL: ${{ inputs.fallback_model }}
 
         # Model configuration
         GITHUB_TOKEN: ${{ steps.prepare.outputs.GITHUB_TOKEN }}
@@ -383,6 +388,7 @@ runs:
         INPUT_PATH_TO_DROID_EXECUTABLE: ${{ inputs.path_to_droid_executable }}
         INPUT_PATH_TO_BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable }}
         INPUT_SHOW_FULL_OUTPUT: ${{ inputs.show_full_output }}
+        INPUT_FALLBACK_MODEL: ${{ inputs.fallback_model }}
 
         # Model configuration
         GITHUB_TOKEN: ${{ steps.prepare.outputs.GITHUB_TOKEN }}
@@ -415,23 +421,3 @@ runs:
         TRACK_PROGRESS: ${{ inputs.track_progress }}
         AUTOMATIC_REVIEW: ${{ inputs.automatic_review }}
         AUTOMATIC_SECURITY_REVIEW: ${{ inputs.automatic_security_review }}
-
-    - name: Collect .factory debug files
-      if: always() && steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true'
-      shell: bash
-      run: |
-        if [ -d "$HOME/.factory" ]; then
-          cp -r "$HOME/.factory" "${{ runner.temp }}/.factory"
-        fi
-
-    - name: Upload debug artifacts
-      if: always() && steps.prepare.outputs.contains_trigger == 'true' && steps.prepare.outputs.steward_skipped != 'true'
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-      with:
-        name: droid-review-debug-${{ github.run_id }}
-        path: |
-          ${{ runner.temp }}/.factory/**
-          ${{ runner.temp }}/droid-prompts/**
-        include-hidden-files: true
-        if-no-files-found: ignore
-        retention-days: 7

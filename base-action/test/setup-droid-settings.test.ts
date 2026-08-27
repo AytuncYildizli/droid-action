@@ -145,4 +145,32 @@ describe("setupDroidSettings", () => {
     expect(settings.newKey).toBe("newValue");
     expect(settings.model).toBe("gpt-5-codex");
   });
+
+  test("does not print custom model credentials from existing settings", async () => {
+    const secret = "local-fallback-secret-value";
+    await setupDroidSettings(
+      JSON.stringify({
+        customModels: [
+          {
+            displayName: "Local GLM 5.2",
+            apiKey: secret,
+          },
+        ],
+      }),
+      testHomeDir,
+    );
+
+    const originalLog = console.log;
+    const messages: string[] = [];
+    console.log = (...args: unknown[]) => {
+      messages.push(args.map(String).join(" "));
+    };
+    try {
+      await setupDroidSettings(undefined, testHomeDir);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(messages.join("\n")).not.toContain(secret);
+  });
 });
