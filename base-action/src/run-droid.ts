@@ -330,6 +330,10 @@ export function prepareRunConfig(
     droidArgs.push("--reasoning-effort", options.reasoningEffort.trim());
   }
 
+  if (options.maxTurns?.trim()) {
+    droidArgs.push("--max-turns", options.maxTurns.trim());
+  }
+
   // Parse and add user's custom Droid arguments
   if (options.droidArgs?.trim()) {
     const parsed = parseShellArgs(options.droidArgs);

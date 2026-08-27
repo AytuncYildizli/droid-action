@@ -33,6 +33,10 @@ inputs:
     description: "Additional arguments to pass directly to Droid CLI (e.g., '--auto', '--enabled-tools read,edit')"
     required: false
     default: ""
+  max_turns:
+    description: "Maximum number of agent turns allowed for Droid Exec; empty uses the Droid CLI default"
+    required: false
+    default: ""
 
   # Authentication settings
   factory_api_key:
@@ -133,6 +137,7 @@ runs:
         INPUT_PATH_TO_BUN_EXECUTABLE: ${{ inputs.path_to_bun_executable }}
         INPUT_SHOW_FULL_OUTPUT: ${{ inputs.show_full_output }}
         INPUT_FALLBACK_MODEL: ${{ inputs.fallback_model }}
+        INPUT_MAX_TURNS: ${{ inputs.max_turns }}
 
         # Provider configuration
         FACTORY_API_KEY: ${{ inputs.factory_api_key }}
