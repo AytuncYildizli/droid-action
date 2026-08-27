@@ -14,6 +14,18 @@ describe("local model fallback action contract", () => {
     expect(action).not.toContain("Upload debug artifacts");
   });
 
+  test("validator reuses the authenticated token from the prepare pass", async () => {
+    const action = await readFile(join(root, "action.yml"), "utf8");
+    const validatorStep = action.slice(
+      action.indexOf("    - name: Prepare validator"),
+      action.indexOf("    - name: Run Droid Exec (validator)"),
+    );
+
+    expect(validatorStep).toContain(
+      "OVERRIDE_GITHUB_TOKEN: ${{ steps.prepare.outputs.github_token }}",
+    );
+  });
+
   test("base action exposes and forwards fallback_model", async () => {
     const action = await readFile(join(root, "base-action/action.yml"), "utf8");
 

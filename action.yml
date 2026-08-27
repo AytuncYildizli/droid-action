@@ -359,6 +359,7 @@ runs:
       run: |
         bun run ${GITHUB_ACTION_PATH}/src/entrypoints/prepare-validator.ts
       env:
+        OVERRIDE_GITHUB_TOKEN: ${{ steps.prepare.outputs.github_token }}
         GITHUB_TOKEN: ${{ steps.prepare.outputs.github_token }}
         FACTORY_API_KEY: ${{ inputs.factory_api_key }}
         REVIEW_VALIDATED_PATH: ${{ inputs.review_validated_path }}
